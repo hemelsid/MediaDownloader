@@ -30,6 +30,11 @@ Files are saved to **Download/MediaDownloader**.
 DRM-protected services (Netflix, Prime Video, Disney+/Hotstar, Hoichoi, Chorki, Spotify…) can't be
 downloaded by any downloader; use their own apps' offline download.
 
+## More
+- [CHANGELOG.md](CHANGELOG.md) — what changed in each version
+- [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) — how the app works inside
+- [desktop/](desktop/) — the Windows/desktop version (Python)
+
 ## Build
 Every push to `main` builds the APKs with GitHub Actions and publishes a Release.
 Locally: open in Android Studio, or run `./gradlew assembleRelease`.
