@@ -1,0 +1,31 @@
+name: Publish saved APK
+
+# Used to add an already-built APK (e.g. an old version) to Releases.
+# Push a branch named "legacy-apk" containing legacy/info.txt + legacy/*.apk:
+#   info.txt line 1 = tag, line 2 = title, line 3 = "prerelease" or "release", rest = notes.
+on:
+  push:
+    branches: [legacy-apk]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(sed -n 1p legacy/info.txt)
+          TITLE=$(sed -n 2p legacy/info.txt)
+          KIND=$(sed -n 3p legacy/info.txt)
+          tail -n +4 legacy/info.txt > notes.md
+          gh release delete "$TAG" --cleanup-tag -y || true
+          FLAGS="--latest=false"
+          [ "$KIND" = "prerelease" ] && FLAGS="$FLAGS --prerelease"
+          gh release create "$TAG" legacy/*.apk --title "$TITLE" --notes-file notes.md --target main $FLAGS
+      - name: Remove the temporary branch
+        run: git push origin --delete legacy-apk

@@ -3,6 +3,7 @@ name: Build APK
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'desktop/**', '.github/workflows/legacy-apk.yml']
   workflow_dispatch:
 
 permissions:
@@ -51,3 +52,4 @@ jobs:
             - `VideoDownloader-x86_64.apk` — emulators / Chromebooks
 
             New versions install over the old one — no need to uninstall.
+            Every older version stays below in Releases if you ever need it.
