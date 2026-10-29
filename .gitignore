@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+*.jks
+*.keystore
+.DS_Store
+
+# Signing key is committed on purpose so every build can update the installed app
+!app/release.jks

@@ -1,0 +1,12 @@
+<resources>
+    <style name="Theme.MediaDownloader" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
+    <style name="Theme.MediaDownloader.Player" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+    <color name="bg">#FF111111</color>
+    <color name="ic_bg">#FFFF6A13</color>
+</resources>
