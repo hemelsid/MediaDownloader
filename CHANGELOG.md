@@ -1,7 +1,15 @@
 # Changelog
 
-Every push to `main` builds a new Release (`v1.<build number>`). Earlier test builds (v1–v6) were
-made before this repo existed and were sent directly as APK files.
+Every push to `main` builds a new Release (`v1.<build number>`); all Releases are kept.
+Earlier test builds v1–v6 were made before this repo existed; they are in Releases as v0.1–v0.6
+(signed with different keys, so uninstall before installing one of them).
+
+## v1.3 — 2026-10-29
+- Same app as v1.1. Every APK is now kept in Releases: newest on top, old test builds
+  v0.1–v0.6 (the v1–v6 below) added as pre-releases.
+
+## v1.2 — 2026-10-29
+- Same app as v1.1 (documentation added).
 
 ## v1.1 — 2026-10-29 (first build from this repo)
 - All text readable on the dark theme (some screens showed black text).

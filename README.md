@@ -10,6 +10,9 @@ video, tap the orange ⬇ button, pick a quality and download. Powered by
 2. Open it, allow "Install unknown apps" if asked, then **Install**.
 3. Later versions install over the old one.
 
+Every version ever built stays in **Releases** — the newest is marked *Latest* and is at the top;
+older ones (including the early test builds v0.1–v0.6) are below it.
+
 ## Features
 - **Home** — search box (paste a link or search for a video) and site shortcuts; add your own sites.
 - **Browser + auto-detect** — detects the video that is actually playing on screen (IDM-style),
