@@ -1,4 +1,4 @@
-# Video Downloader (Android)
+# Video Downloader (Android + PC)
 
 An IDM-style video & audio downloader for Android. Open any site in the built-in browser, play a
 video, tap the orange ⬇ button, pick a quality and download. Powered by
@@ -6,9 +6,13 @@ video, tap the orange ⬇ button, pick a quality and download. Powered by
 [youtubedl-android](https://github.com/yausername/youtubedl-android)).
 
 ## Install
+**Phone:**
 1. On your phone open this repo's **Releases** and download `VideoDownloader-arm64-v8a.apk`.
 2. Open it, allow "Install unknown apps" if asked, then **Install**.
 3. Later versions install over the old one.
+
+**PC (Windows 10/11):** download `VideoDownloader-Windows-Setup.exe` from the same Release and run it
+(or use the portable zip). Details in [desktop/README.md](desktop/README.md).
 
 Every version ever built stays in **Releases** — the newest is marked *Latest* and is at the top;
 older ones (including the early test builds v0.1–v0.6) are below it.
@@ -36,10 +40,11 @@ downloaded by any downloader; use their own apps' offline download.
 ## More
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each version
 - [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) — how the app works inside
-- [desktop/](desktop/) — the Windows/desktop version (Python)
+- [desktop/](desktop/) — the PC (Windows) version
 
 ## Build
-Every push to `main` builds the APKs with GitHub Actions and publishes a Release.
+Every push to `main` builds the APKs and the Windows app with GitHub Actions and publishes one Release
+with all of them.
 Locally: open in Android Studio, or run `./gradlew assembleRelease`.
 
 `app/release.jks` (password `mediadownloader`) is committed so every build is signed with the same

@@ -1,9 +1,11 @@
 # Notes for AI assistants working on this repo
 
-- This repo (`hemelsid/MediaDownloader`) is the single home of the Video Downloader app.
+- This repo (`hemelsid/MediaDownloader`) is the single home of the Video Downloader app —
+  Android (`app/`) and PC/Windows (`desktop/`). Each Release contains both.
   Commit and push every change here so the owner always has the latest code and APKs.
 - After each change: update `CHANGELOG.md` (and `docs/HOW-IT-WORKS.md` if behaviour changed),
-  push to `main`, wait for the "Build APK" workflow, and give the owner the new Release APK.
+  push to `main`, wait for the "Build APK" workflow, and give the owner the new Release files.
+- Keep phone and PC features in step where it makes sense (same engine ideas, same English wording).
 - All in-app text must be plain English (no Banglish).
 - Keep the committed signing key `app/release.jks`; changing it forces users to uninstall.
 - Never put this app's code or build branches in other repos (e.g. Sathi.AI).

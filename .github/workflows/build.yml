@@ -1,34 +1,31 @@
 name: Build APK
 
+# Builds the Android APKs and the Windows app, then publishes ONE release (v1.<run>) with all files.
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**', 'desktop/**', '.github/workflows/legacy-apk.yml']
+    paths-ignore: ['**.md', 'docs/**', '.github/workflows/legacy-apk.yml']
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-
       - uses: gradle/actions/setup-gradle@v4
-
       - name: Build APKs
         env:
           KEYSTORE_PASSWORD: mediadownloader
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --stacktrace
-
       - name: Collect APKs
         run: |
           mkdir out
@@ -37,19 +34,101 @@ jobs:
             cp "$f" "out/VideoDownloader-${abi}.apk"
           done
           ls -lh out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*.apk
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tools
+        run: python -m pip install pyinstaller pillow
+      - name: Version and icon
+        shell: pwsh
+        run: |
+          "VERSION = `"1.${{ github.run_number }}`"" | Out-File -Encoding utf8 desktop/_version.py
+          python -c "import sys; sys.path.insert(0,'desktop'); import video_downloader as v; i=v.make_icon(256); i.save('desktop/icon.png'); i.save('desktop/icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+      - name: Build app
+        run: >
+          pyinstaller --noconfirm --clean --windowed --name VideoDownloader
+          --icon desktop/icon.ico --paths desktop
+          --hidden-import PIL._tkinter_finder
+          desktop/video_downloader.py
+      - name: Add engine (yt-dlp, ffmpeg, Deno)
+        shell: pwsh
+        run: |
+          $app = "dist/VideoDownloader"
+          Copy-Item desktop/icon.png $app/
+          $bin = New-Item -ItemType Directory -Force "$app/bin"
+          Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile "$bin/yt-dlp.exe"
+          Invoke-WebRequest https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip -OutFile ff.zip
+          Expand-Archive ff.zip ff
+          Get-ChildItem ff -Recurse -Include ffmpeg.exe,ffprobe.exe | Copy-Item -Destination $bin
+          Invoke-WebRequest https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip -OutFile deno.zip
+          Expand-Archive deno.zip $bin
+          Get-ChildItem $bin
+      - name: Check engine
+        shell: pwsh
+        run: |
+          $bin = "dist/VideoDownloader/bin"
+          & "$bin/yt-dlp.exe" --version
+          & "$bin/ffmpeg.exe" -version | Select-Object -First 1
+          & "$bin/deno.exe" --version
+      - name: Smoke test (app starts and closes)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist/VideoDownloader/VideoDownloader.exe -ArgumentList "--selftest" -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw "App did not close by itself" }
+          "exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "App crashed on start" }
+      - name: Real download test (information only)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse dist/VideoDownloader/bin desktop/bin
+          python -c "import sys; sys.path.insert(0,'desktop'); import engine; e=engine.Engine({}); i=e.info('https://www.youtube.com/watch?v=jNQXAC9IVRw'); print('YouTube OK:', i.title, [q.label for q in i.video][:4])"
+      - name: Installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress | Out-Null
+          $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" | Select-Object -First 1
+          & $iscc.FullName "/DAppVersion=1.${{ github.run_number }}" desktop/installer.iss
+          Compress-Archive dist/VideoDownloader/* out/VideoDownloader-Windows-portable.zip
+          Get-ChildItem out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: out/*
+
+  release:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - run: ls -lh out
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.${{ github.run_number }}
           name: Video Downloader v1.${{ github.run_number }}
           make_latest: true
-          files: out/*.apk
+          files: out/*
           body: |
-            **Which APK should I download?**
+            ### 📱 Phone (Android)
             - `VideoDownloader-arm64-v8a.apk` — almost every phone from 2017 onwards ✅
             - `VideoDownloader-armeabi-v7a.apk` — very old or low-end phones
             - `VideoDownloader-x86_64.apk` — emulators / Chromebooks
 
-            New versions install over the old one — no need to uninstall.
-            Every older version stays below in Releases if you ever need it.
+            ### 💻 PC (Windows 10/11, 64-bit)
+            - `VideoDownloader-Windows-Setup.exe` — installer (no admin needed, adds a desktop shortcut) ✅
+            - `VideoDownloader-Windows-portable.zip` — no install: unzip and run `VideoDownloader.exe`
+
+            New versions install over the old one. Every older version stays below in Releases.

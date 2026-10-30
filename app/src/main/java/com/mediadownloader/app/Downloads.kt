@@ -438,7 +438,6 @@ object Downloads {
                     addOption(if (item.playlist) "--yes-playlist" else "--no-playlist")
                     addOption("--windows-filenames")
                     addOption("--no-mtime")
-                    addOption("--embed-metadata")
                     addOption("--concurrent-fragments", 8)
                     addOption("--http-chunk-size", "10M")
                     addOption("--fragment-retries", 10)

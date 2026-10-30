@@ -40,12 +40,26 @@ requests carry `pot=…` for that video; it is stored per video id and passed as
 cookies. Then the default client and fallbacks (`tv_simply,web_safari,mweb`, `android_vr,web_embedded,tv`)
 are tried. If YouTube still blocks: switch Wi-Fi/mobile data or log in to YouTube in the browser.
 
+## PC app (`desktop/`)
+- `video_downloader.py` — Tkinter window: search/paste box, copied-link bar, preview panel
+  (thumbnail, title, Video/Audio quality list with sizes, file name, playlist), downloads list,
+  Settings. Settings and history are stored in `%APPDATA%\VideoDownloader`.
+- `engine.py` — runs the standalone `yt-dlp.exe` as a separate process (so it can self-update with
+  `-U`), with `--ffmpeg-location bin` and `--js-runtimes deno:bin\deno.exe` (YouTube needs a JS
+  runtime). Progress comes from a custom `--progress-template`, final paths from
+  `--print after_move:filepath`. Same quality logic, DRM list, YouTube client fallbacks and error
+  messages as the phone. If browser cookies can't be read it retries without them.
+- Built on GitHub's Windows runner with PyInstaller (one folder) + Inno Setup (per-user install in
+  `%LOCALAPPDATA%\Programs\Video Downloader`, no admin). The build also starts the app once as a
+  smoke test.
+
 ## Not possible
 DRM services (Netflix, Prime Video, Disney+/Hotstar, Hoichoi, Chorki, Spotify…) — the app shows an
 explanation instead of trying.
 
 ## Building & releasing
-- Push to `main` → GitHub Actions builds `arm64-v8a`, `armeabi-v7a`, `x86_64` APKs and publishes a Release.
+- Push to `main` → GitHub Actions builds `arm64-v8a`, `armeabi-v7a`, `x86_64` APKs and the Windows
+  installer + portable zip, then publishes one Release with all of them.
 - Version code = 100 + build number.
 - Signed with the committed `app/release.jks` (password `mediadownloader`) so updates install over the old app.
 

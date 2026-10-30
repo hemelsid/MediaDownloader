@@ -9,3 +9,13 @@ local.properties
 
 # Signing key is committed on purpose so every build can update the installed app
 !app/release.jks
+
+# PC build outputs
+desktop/_version.py
+desktop/icon.ico
+desktop/icon.png
+desktop/bin/
+dist/
+out/
+*.spec
+__pycache__/

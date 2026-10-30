@@ -1,38 +1,43 @@
-# Video Downloader — Windows / desktop version
+# Video Downloader — PC (Windows)
 
-A small IDM-style desktop downloader (Python + Tkinter, powered by yt-dlp). It downloads video or
-audio from YouTube, Facebook, Instagram, TikTok, X, Vimeo and 1000+ other sites, plus direct file links.
+The PC version of the app. Paste a link (or type words to search YouTube), see a preview with every
+quality and its size, then download — same idea and same engine as the phone app.
 
-## Features
-- Paste many links at once (one per line); download queue with 1–8 parallel downloads
-- Progress bar, size, speed and time left
-- Quality: Best / 1080p / 720p / 480p / 360p, or audio as MP3 (320k/192k) or M4A
-- Whole-playlist download
-- Clipboard watch — copy a link and the app asks whether to download it
-- Cancel / Retry, resume of broken downloads
-- One-click yt-dlp update
+## Install (Windows 10/11, 64-bit)
+1. Open this repo's **Releases** and download **`VideoDownloader-Windows-Setup.exe`** from the newest version.
+2. Run it. If Windows shows "Windows protected your PC", click **More info → Run anyway**
+   (the app isn't signed with a paid certificate).
+3. Open **Video Downloader** from the desktop or Start menu.
 
-## Setup (Windows)
-1. Install **Python** from https://www.python.org/downloads/ and tick **"Add Python to PATH"**.
-2. In Command Prompt:
-   ```
-   pip install -r requirements.txt
-   ```
-3. Install **ffmpeg** (needed for HD video and MP3):
-   ```
-   winget install Gyan.FFmpeg
-   ```
-   or put `ffmpeg.exe` next to this app.
-4. Run:
-   ```
-   python media_downloader.py
-   ```
+No installer wanted? Download `VideoDownloader-Windows-portable.zip`, unzip, run `VideoDownloader.exe`.
+Everything needed is included — no Python, ffmpeg or anything else to install.
 
-macOS: `brew install ffmpeg python-tk` · Linux: `sudo apt install ffmpeg python3-tk`
+## Using it
+- Paste a link and press **Find** (or press **Paste**). Copying a link anywhere also shows a
+  "Copied link detected" bar.
+- Type words instead of a link to search YouTube.
+- Pick **Video** or **Audio**, choose a quality (sizes shown), optionally change the file name, **Download**.
+- Several links at once (one per line) are all added with the best quality.
+- Downloads list: double-click to play, right-click for more. Files go to
+  `Downloads\Video Downloader` (change it in **Settings**).
+- If a site blocks you: **Settings → Logins** — pick a browser where you are logged in
+  (Firefox works best on Windows) or choose a `cookies.txt` file.
+- The engine (yt-dlp) updates itself once a day; **Settings → Update now** forces it.
 
-## Build an EXE
-Double-click `build_exe.bat`. You get `dist\MediaDownloader.exe`; keep `ffmpeg.exe` next to it.
+## What's inside
+| File | Purpose |
+|---|---|
+| `video_downloader.py` | The window (Tkinter, dark theme) |
+| `engine.py` | Runs yt-dlp / ffmpeg / Deno, builds the quality list, progress, retries, error messages |
+| `installer.iss` | Inno Setup script for the installer |
 
-## Notes
-DRM-protected services (Netflix, Prime Video, Disney+…) and private/login-only videos can't be downloaded.
-If a site stops working, press **Update yt-dlp** first.
+The release build bundles `yt-dlp.exe`, `ffmpeg.exe`/`ffprobe.exe` and `deno.exe` (needed for
+YouTube) in a `bin` folder next to the app.
+
+## Run from source (any OS)
+```
+pip install -r requirements.txt
+python video_downloader.py
+```
+You also need ffmpeg (and Deno for YouTube) on your PATH or in a `bin` folder next to the script.
+macOS: `brew install ffmpeg deno python-tk` · Linux: `sudo apt install ffmpeg python3-tk` + Deno.

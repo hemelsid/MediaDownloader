@@ -4,6 +4,14 @@ Every push to `main` builds a new Release (`v1.<build number>`); all Releases ar
 Earlier test builds v1–v6 were made before this repo existed; they are in Releases as v0.1–v0.6
 (signed with different keys, so uninstall before installing one of them).
 
+## v1.4 — 2026-10-31
+- **New: PC app for Windows** — installer and portable zip in every Release. Paste a link or search
+  YouTube, preview with thumbnail, every quality with its size, rename, playlists, download queue
+  with progress/speed, clipboard detection, logins via browser or cookies.txt, daily engine update.
+  Bundles yt-dlp, ffmpeg and Deno (needed for YouTube).
+- Phone: shorter "Processing" step — finished files are no longer rewritten just to add metadata.
+- One Release now contains both the phone APKs and the PC files.
+
 ## v1.3 — 2026-10-29
 - Same app as v1.1. Every APK is now kept in Releases: newest on top, old test builds
   v0.1–v0.6 (the v1–v6 below) added as pre-releases.
@@ -49,5 +57,5 @@ Earlier test builds v1–v6 were made before this repo existed; they are in Rele
 ## v1 — 2026-10-29
 - First Android version: paste or share a link, pick quality, download in the background.
 
-## Desktop version — 2026-10-28
-- Windows/desktop app in `desktop/` (Python + Tkinter).
+## Desktop prototype — 2026-10-28
+- First simple Windows/desktop script (replaced by the PC app in v1.4).
