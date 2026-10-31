@@ -104,6 +104,14 @@ class SearchResult:
     channel: str
     duration: int
     thumbnail: str | None
+    source: str = "YouTube"      # site shown on the result
+
+
+# Where the search box can look. key -> (label, domain for "site:" web search, or None)
+SEARCH_SOURCES = {
+    "All": None, "YouTube": "youtube.com", "Facebook": "facebook.com", "Instagram": "instagram.com",
+    "TikTok": "tiktok.com", "X": "x.com", "Dailymotion": "dailymotion.com", "Vimeo": "vimeo.com", "Web": None,
+}
 
 
 class EngineError(Exception):
@@ -375,6 +383,41 @@ class Engine:
             thumbs = e.get("thumbnails") or []
             res.append(SearchResult(url, e.get("title") or url, e.get("channel") or e.get("uploader") or "",
                                     int(e.get("duration") or 0), thumbs[-1]["url"] if thumbs else None))
+        return res
+
+    def web_search(self, query: str, site: str | None = None, n: int = 12) -> list[SearchResult]:
+        """Web results (DuckDuckGo's plain HTML page — no API key). site='facebook.com' limits to one site."""
+        import html as htmllib
+        import urllib.parse
+        import urllib.request
+        q = f"{query} site:{site}" if site else f"{query} video"
+        req = urllib.request.Request("https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q}),
+                                     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                                            "(KHTML, like Gecko) Chrome/128.0 Safari/537.36",
+                                              "Accept-Language": "en-US,en;q=0.8"})
+        try:
+            page = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", "replace")
+        except Exception as e:
+            raise EngineError("Web search isn't reachable right now. Try YouTube, or use Google.", repr(e))
+        res: list[SearchResult] = []
+        for m in re.finditer(r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', page, re.S):
+            href, title = htmllib.unescape(m.group(1)), re.sub(r"<[^>]+>", "", htmllib.unescape(m.group(2))).strip()
+            if "uddg=" in href:
+                href = urllib.parse.unquote(urllib.parse.parse_qs(urllib.parse.urlparse(href).query).get("uddg", [""])[0])
+            if href.startswith("//"):
+                href = "https:" + href
+            if not href.startswith("http") or "duckduckgo.com" in href:
+                continue
+            host = host_of(href)
+            if site and not (host == site or host.endswith("." + site)):
+                continue
+            if any(r.url == href for r in res):
+                continue
+            res.append(SearchResult(href, title or href, host, 0, None, source=host))
+            if len(res) >= n:
+                break
+        if not res and "result__a" not in page:
+            raise EngineError("Web search isn't available right now. Try YouTube, or use Google.", page[:300])
         return res
 
     def download(self, key: str, url: str, q: Quality, folder: str, playlist: bool, name: str | None, on_progress) -> list[str]:

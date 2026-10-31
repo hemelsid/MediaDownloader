@@ -13,8 +13,8 @@ video, tap the orange ⬇ button, pick a quality and download. Powered by
 
 **PC (Windows 10/11):** download `VideoDownloader-Windows-Setup.exe` from the same Release and run it
 (or use the portable zip). Details in [desktop/README.md](desktop/README.md).
-On PC you also get an IDM-style **"Download this video" button** inside Chrome / Edge / Brave — in the app
-click **Browser button** to set it up.
+On PC you also get an IDM-style **"Download this video" button** inside Chrome / Edge / Brave: pick the
+quality right on the page and get a notification when it's saved — in the app click **Browser button** to set it up.
 
 Every version ever built stays in **Releases** — the newest is marked *Latest* and is at the top;
 older ones (including the early test builds v0.1–v0.6) are below it.

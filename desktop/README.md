@@ -15,7 +15,8 @@ Everything needed is included — no Python, ffmpeg or anything else to install.
 ## Using it
 - Paste a link and press **Find** (or press **Paste**). Copying a link anywhere also shows a
   "Copied link detected" bar.
-- Type words instead of a link to search YouTube.
+- Type words instead of a link to search. Pick where under the box: **All**, YouTube, Facebook, Instagram,
+  TikTok, X, Dailymotion, Vimeo or Web — or **Google ↗** to search Google videos in your browser.
 - Pick **Video** or **Audio**, choose a quality (sizes shown), optionally change the file name, **Download**.
 - Several links at once (one per line) are all added with the best quality.
 - Downloads list: double-click to play, right-click for more. Files go to
@@ -30,16 +31,19 @@ In the app click **Browser button** and follow the 4 steps (about a minute):
 2. Turn on **Developer mode**.
 3. Click **Load unpacked** and pick the folder the app shows
    (`%LOCALAPPDATA%\Programs\Video Downloader\extension`).
-4. Play any video — an orange **Download this video** button appears on it. Click it and the video
-   opens in the app. Right-click a page or link → **Download with Video Downloader** also works.
-If the app is closed, clicking the button opens it.
+4. Play any video — an orange **Download this video** button appears on it. Click it: a panel opens
+   beside the video with every quality and its size. Pick one — it downloads in the background, the
+   panel shows the progress, and a Windows notification tells you when it's done (Play / Show in folder).
+If the app is closed, clicking the button starts it quietly. After updating the app, press the reload
+icon on the extension in the browser's extensions page once.
 
 ## What's inside
 | File | Purpose |
 |---|---|
 | `video_downloader.py` | The window (Tkinter, dark theme) |
 | `engine.py` | Runs yt-dlp / ffmpeg / Deno, builds the quality list, progress, retries, error messages |
-| `bridge.py` | Local link with the browser extension (127.0.0.1:47811), single instance, `videodownloader://` links |
+| `bridge.py` | Local API for the browser extension (127.0.0.1:47811), single instance, `videodownloader://` links |
+| `notify.py` | Windows "download complete" notification |
 | `icons.py` | Draws the app icon sharply at every size |
 | `installer.iss` | Inno Setup script for the installer (also registers `videodownloader://`) |
 | `../browser-extension/` | The Chrome / Edge / Brave extension |

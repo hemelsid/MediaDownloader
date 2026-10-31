@@ -4,6 +4,20 @@ Every push to `main` builds a new Release (`v1.<build number>`); all Releases ar
 Earlier test builds v1–v6 were made before this repo existed; they are in Releases as v0.1–v0.6
 (signed with different keys, so uninstall before installing one of them).
 
+## v1.7 — 2026-11-01
+- **Browser button now works right on the page (like IDM):** click "Download this video" and a panel
+  opens beside the video with its thumbnail, title and every quality with its size (Video / Audio).
+  Pick one — the PC app downloads it in the background (the app window doesn't pop up), progress
+  shows in the panel, and when it's done you get a Windows notification with Play / Show in folder.
+  If the app is closed, the button starts it quietly. Right-click menu and toolbar popup open the same panel.
+- **Search everywhere:** the search box is no longer YouTube-only. "Search in" chips under the box:
+  All, YouTube, Facebook, Instagram, TikTok, X, Dailymotion, Vimeo, Web — plus "Google ↗" to search
+  Google videos in your browser. (The header site links were replaced by these chips.)
+- Settings: browser button can "Choose on the page" (default), "Best quality at once" or "Open in the app";
+  option to turn the Windows notification off.
+- Direct video files downloaded from a page are saved under the caption shown on the page.
+- Browser extension 1.1.0 — reload it once in the browser's extensions page after updating the app.
+
 ## v1.6 — 2026-11-01
 - **New: IDM-style browser button** (Chrome, Edge, Brave). While a video plays on YouTube, Facebook,
   Instagram or any site, an orange "Download this video" button appears on it; one click sends that

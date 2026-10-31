@@ -30,6 +30,7 @@ import engine
 from engine import EngineError, MediaInfo, Quality
 from icons import make_icon
 import bridge
+import notify
 
 APP = "Video Downloader"
 VERSION = "dev"
@@ -57,11 +58,6 @@ WARN = "#FBBF24"
 IS_WIN = sys.platform.startswith("win")
 FAMILY = "Segoe UI" if IS_WIN else ("Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans")
 SYMBOLS = "Segoe UI Symbol" if IS_WIN else FAMILY
-
-
-SITES = [("YouTube", "https://www.youtube.com"), ("Facebook", "https://www.facebook.com/watch"),
-         ("Instagram", "https://www.instagram.com/reels/"), ("TikTok", "https://www.tiktok.com"),
-         ("X", "https://x.com"), ("Dailymotion", "https://www.dailymotion.com"), ("Vimeo", "https://vimeo.com/watch")]
 
 
 def F(size=13, weight="normal", family=None):
@@ -437,8 +433,8 @@ class App:
         self._build()
         self._render_list()
 
-        self.bridge = bridge.Bridge(on_add=lambda d: self.ui_q.put(("ext_add", d)),
-                                    on_focus=lambda: self.ui_q.put(("call", self.bring_to_front)), version=VERSION)
+        self.ext_infos: dict[str, MediaInfo] = {}
+        self.bridge = bridge.Bridge(self, VERSION)
         self.bridge.start()
 
         root.after(100, self._pump)
@@ -480,7 +476,8 @@ class App:
     # ------------------------------------------------ persistence
     def _load_settings(self) -> dict:
         s = {"folder": default_folder(), "parallel": 3, "clipboard": True, "auto_update": True,
-             "cookies_browser": "None", "cookies_file": "", "last_update": 0, "ext_mode": "ask"}
+             "cookies_browser": "None", "cookies_file": "", "last_update": 0, "ext_mode": "panel",
+             "search_source": "All", "notify": True}
         try:
             with open(os.path.join(data_dir(), "settings.json"), encoding="utf-8") as f:
                 s.update(json.load(f))
@@ -515,7 +512,7 @@ class App:
     def _build(self):
         r = self.root
         r.grid_columnconfigure(0, weight=1)
-        r.grid_rowconfigure(3, weight=1)
+        r.grid_rowconfigure(4, weight=1)
 
         # header
         head = ctk.CTkFrame(r, fg_color="transparent")
@@ -524,10 +521,6 @@ class App:
         logo = ctk.CTkLabel(head, text="", image=ctk.CTkImage(make_icon(128), size=(34, 34)))
         logo.grid(row=0, column=0, padx=(0, 12))
         ctk.CTkLabel(head, text=APP, font=F(22, "bold"), text_color=FG).grid(row=0, column=1, sticky="w")
-        sites = ctk.CTkFrame(head, fg_color="transparent")
-        sites.grid(row=0, column=2, padx=(8, 14))
-        for i, (name, url) in enumerate(SITES[:5] if self.compact else SITES):
-            self._site_button(sites, name, url).grid(row=0, column=i, padx=3)
         ghost_button(head, "Browser button", self.open_ext_setup).grid(row=0, column=3, padx=(0, 6))
         ghost_button(head, "Open folder", self.open_folder).grid(row=0, column=4, padx=(0, 6))
         ghost_button(head, "Settings", self.open_settings).grid(row=0, column=5)
@@ -541,7 +534,7 @@ class App:
         box.grid(row=0, column=0, sticky="ew")
         box.grid_columnconfigure(0, weight=1)
         self.entry = ctk.CTkEntry(box, height=40, border_width=0, corner_radius=8, fg_color=PANEL, text_color=FG,
-                                  font=F(14), placeholder_text="Paste a video link, or type to search YouTube…",
+                                  font=F(14), placeholder_text="Paste a video link, or type to search videos…",
                                   placeholder_text_color=DIM)
         self.entry.grid(row=0, column=0, sticky="ew", padx=(10, 4), pady=3)
         self.clear_btn = ctk.CTkButton(box, text="✕", width=32, height=32, corner_radius=16, fg_color="transparent",
@@ -555,7 +548,26 @@ class App:
         ghost_button(sb, "Paste", self.paste_and_go, width=86, ).grid(row=0, column=1, padx=(10, 0))
         primary_button(sb, "Find", self.go, height=48, size=15, width=120).grid(row=0, column=2, padx=(10, 0))
 
-        # copied-link banner (row 2, hidden until needed)
+        # where to search (row 2)
+        chips = ctk.CTkFrame(r, fg_color="transparent")
+        chips.grid(row=2, column=0, sticky="ew", padx=24, pady=(2, 2))
+        ctk.CTkLabel(chips, text="Search in", font=F(12), text_color=DIM).grid(row=0, column=0, padx=(2, 10))
+        self.source = self.settings.get("search_source", "All")
+        if self.source not in engine.SEARCH_SOURCES:
+            self.source = "All"
+        self.chip_btns = {}
+        for i, name in enumerate(engine.SEARCH_SOURCES, start=1):
+            b = self._chip(chips, name)
+            b.grid(row=0, column=i, padx=3, pady=4)
+            self.chip_btns[name] = b
+        g = ctk.CTkButton(chips, text="Google  ↗", width=0, height=30, corner_radius=15, fg_color="transparent",
+                          hover_color=CARD_HOVER, text_color=MUTED, border_width=1, border_color=LINE, font=F(12),
+                          command=self.google_search)
+        g.grid(row=0, column=len(self.chip_btns) + 1, padx=(10, 0))
+        Tooltip(g, "Search Google videos in your browser (use the browser button there)")
+        self._paint_chips()
+
+        # copied-link banner (row 3, hidden until needed)
         self.banner = ctk.CTkFrame(r, fg_color=ORANGE_SOFT, corner_radius=10)
         self.banner.grid_columnconfigure(0, weight=1)
         self.banner_lbl = ctk.CTkLabel(self.banner, text="", font=F(12), text_color=FG, anchor="w")
@@ -567,7 +579,7 @@ class App:
 
         # body
         body = ctk.CTkFrame(r, fg_color="transparent")
-        body.grid(row=3, column=0, sticky="nsew", padx=24, pady=(8, 10))
+        body.grid(row=4, column=0, sticky="nsew", padx=24, pady=(8, 10))
         body.grid_rowconfigure(0, weight=1)
         body.grid_columnconfigure(1, weight=1)
 
@@ -614,7 +626,7 @@ class App:
 
         # status bar
         bar = ctk.CTkFrame(r, fg_color=PANEL, corner_radius=0, height=30)
-        bar.grid(row=4, column=0, sticky="ew")
+        bar.grid(row=5, column=0, sticky="ew")
         bar.grid_columnconfigure(0, weight=1)
         self.status = ctk.CTkLabel(bar, text="", font=F(11), text_color=MUTED, anchor="w")
         self.status.grid(row=0, column=0, sticky="ew", padx=16, pady=4)
@@ -660,7 +672,7 @@ class App:
         steps = (("1", "Copy a video link from YouTube, Facebook, Instagram, TikTok, X, Vimeo — almost any site."),
                  ("2", "Paste it above and press Find. Copied links are also noticed automatically."),
                  ("3", "Pick Video or Audio and a quality (sizes are shown), then Download."),
-                 ("★", "No link? Type a few words above to search YouTube."))
+                 ("★", "No link? Type a few words above to search — everywhere, or only on YouTube, Facebook… (pick below the box)."))
         for i, (n, t) in enumerate(steps, start=1):
             row = ctk.CTkFrame(self.preview, fg_color="transparent")
             row.grid(row=i, column=0, sticky="ew", padx=18, pady=6)
@@ -705,13 +717,17 @@ class App:
                                                                                     pady=(12, 0))
             row = ctk.CTkFrame(self.preview, fg_color="transparent")
             row.grid(row=4, column=0, sticky="w", padx=22, pady=14)
-            primary_button(row, "Try again", lambda: self.load(url), height=36, size=13, width=120).grid(row=0, column=0)
+            retry = (lambda: self.load(url)) if url else self.go          # empty url = a search failed
+            primary_button(row, "Try again", retry, height=36, size=13, width=120).grid(row=0, column=0)
             if e.login_site:
                 ghost_button(row, "Settings", self.open_settings, width=100).grid(row=0, column=1, padx=8)
+            elif not url:
+                ghost_button(row, "Search on Google  ↗", self.google_search, width=150).grid(row=0, column=1, padx=8)
 
     def _show_results(self, results: list[engine.SearchResult], query: str):
         self._clear_preview()
-        self._section_title(f"Results for “{query[:36]}”", 0)
+        where = "" if self.source == "All" else f" on {self.source}"
+        self._section_title(f"“{query[:30]}”{where}", 0)
         if not results:
             ctk.CTkLabel(self.preview, text="Nothing found.", text_color=DIM, font=F(13)).grid(row=1, column=0, padx=18,
                                                                                               sticky="w")
@@ -726,8 +742,9 @@ class App:
             t = ctk.CTkLabel(row, text=res.title, font=F(12, "bold"), text_color=FG, wraplength=self.pw - 170, justify="left",
                              anchor="w")
             t.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(8, 0))
-            m = ctk.CTkLabel(row, text=" • ".join(x for x in (res.channel, human_time(res.duration)) if x), font=F(11),
-                             text_color=DIM, anchor="w")
+            meta = " • ".join(x for x in ((res.channel if res.source == "YouTube" else ""), human_time(res.duration),
+                                           "YouTube" if res.source == "YouTube" else res.source) if x)
+            m = ctk.CTkLabel(row, text=meta, font=F(11), text_color=DIM, anchor="w")
             m.grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 8))
             for w in (row, th, t, m):
                 w.bind("<Button-1>", lambda e, u=res.url: self.load(u))
@@ -737,6 +754,15 @@ class App:
                 self.thumbs.get(res.thumbnail, size,
                                 lambda img, lb=th: lb.winfo_exists() and lb.configure(
                                     image=ctk.CTkImage(rounded(img, 12), size=size)))
+            else:
+                def with_favicon(icon, lb=th):
+                    if not lb.winfo_exists():
+                        return
+                    base = Image.new("RGB", (size[0] * 2, size[1] * 2), CARD_HOVER)
+                    ic = icon.convert("RGBA").resize((56, 56), Image.LANCZOS)
+                    base.paste(ic, ((base.width - 56) // 2, (base.height - 56) // 2), ic)
+                    lb.configure(image=ctk.CTkImage(rounded(base, 12), size=size))
+                self.thumbs.get_raw(f"https://www.google.com/s2/favicons?domain={res.source}&sz=64", with_favicon)
 
     def _show_info(self, info: MediaInfo):
         self.info = info
@@ -889,18 +915,6 @@ class App:
         self.info_url = ""
         self._show_welcome()
 
-    def _site_button(self, master, name, url):
-        b = ctk.CTkButton(master, text=name[0], width=36, height=36, corner_radius=10, fg_color=CARD,
-                          hover_color=CARD_HOVER, text_color=FG, font=F(13, "bold"),
-                          command=lambda: webbrowser.open(url))
-        Tooltip(b, f"Open {name}")
-        dom = engine.host_of(url)
-        self.thumbs.get_raw(f"https://www.google.com/s2/favicons?domain={dom}&sz=64",
-                            lambda img, b=b: b.winfo_exists() and b.configure(
-                                text="", image=ctk.CTkImage(img.convert("RGBA").resize((40, 40), Image.LANCZOS),
-                                                            size=(20, 20))))
-        return b
-
     def open_folder(self):
         os.makedirs(self.settings["folder"], exist_ok=True)
         open_path(self.settings["folder"])
@@ -968,7 +982,7 @@ class App:
         self.bring_to_front()
         self.set_search(url)
         self.last_clip = url
-        if self.settings.get("ext_mode", "ask") == "best":
+        if self.settings.get("ext_mode", "panel") == "best":
             self.add_download(url, d.get("title") or url, engine.BEST, False, None)
             self._set_status("Download started from your browser ⬇")
         else:
@@ -989,19 +1003,176 @@ class App:
     def open_ext_setup(self):
         ExtensionDialog(self)
 
+    # ------------------------------------------------ API used by the browser button (runs on server threads)
+    def call_in_ui(self, fn, timeout=15):
+        """Run fn on the window's thread and return its result."""
+        done, box = threading.Event(), {}
+
+        def run():
+            try:
+                box["v"] = fn()
+            except Exception as e:
+                box["e"] = e
+            done.set()
+        self.ui_q.put(("call", run))
+        if not done.wait(timeout):
+            raise TimeoutError("App is busy")
+        if "e" in box:
+            raise box["e"]
+        return box.get("v")
+
+    def ext_add(self, d):
+        self.ui_q.put(("ext_add", d))
+
+    def focus(self):
+        self.ui_q.put(("call", self.bring_to_front))
+
+    @staticmethod
+    def _q_json(q: Quality):
+        return {"label": q.label, "size": q.size, "audio": q.is_audio}
+
+    def api_info(self, d):
+        mode = self.settings.get("ext_mode", "panel")
+        if mode == "app":
+            self.ext_add(d)
+            return {"ok": True, "mode": "app"}
+        if mode == "best":
+            iid = self.call_in_ui(lambda: self.add_download(d["url"], d.get("title") or d["url"], engine.BEST, False, None))
+            return {"ok": True, "mode": "started", "id": iid, "title": d.get("title") or ""}
+        try:
+            try:
+                info = self.engine.info(d["url"])
+            except EngineError as first:
+                src = d.get("src") or ""
+                if not src.startswith("http") or first.drm:
+                    raise
+                info = self.engine.info(src)
+                if d.get("title") and (info.site is None or info.title in src):
+                    info.title = d["title"]
+        except EngineError as e:
+            return {"ok": False, "error": e.friendly, "detail": e.detail, "drm": e.drm}
+        token = uuid.uuid4().hex
+        self.ext_infos[token] = info
+        while len(self.ext_infos) > 40:
+            self.ext_infos.pop(next(iter(self.ext_infos)))
+        return {"ok": True, "mode": "panel", "token": token, "title": info.title, "thumbnail": info.thumbnail,
+                "uploader": info.uploader, "site": info.site, "duration": info.duration, "views": info.views,
+                "is_playlist": info.is_playlist, "count": info.count,
+                "video": [self._q_json(q) for q in info.video], "audio": [self._q_json(q) for q in info.audio],
+                "folder": self.settings["folder"]}
+
+    def api_download(self, d):
+        info = self.ext_infos.get(str(d.get("token", "")))
+        if not info:
+            return {"ok": False, "error": "Please press the download button on the video again."}
+        options = info.audio if d.get("kind") == "audio" else info.video
+        try:
+            q = options[int(d.get("index", 0))]
+        except (ValueError, IndexError):
+            return {"ok": False, "error": "That quality isn't available."}
+        playlist = bool(d.get("playlist")) and info.is_playlist
+        # direct video files have no real title: save them under the caption shown on the page
+        name = None
+        if info.site is None and info.title and not playlist:
+            name = "".join(c if c not in '\\/:*?"<>|\n\r\t' else " " for c in info.title).strip()[:150] or None
+        iid = self.call_in_ui(lambda: self.add_download(info.url, info.title, q, playlist, name,
+                                                        thumb=info.thumbnail, duration=info.duration))
+        self.ui_q.put(("status", f"Download started from your browser: {info.title}"))
+        return {"ok": True, "id": iid}
+
+    def api_status(self, iid):
+        it = self._get(iid)
+        if not it:
+            return {"ok": False}
+        return {"ok": True, "status": it.status, "pct": round(it.pct, 1), "speed": it.speed, "eta": it.eta,
+                "total": it.total, "error": it.error, "title": it.title, "quality": it.quality.label,
+                "file": it.files[0] if it.files else ""}
+
+    def api_open(self, d):
+        it = self._get(str(d.get("id", "")))
+        if not it:
+            return {"ok": False}
+        if d.get("action") == "folder":
+            self.ui_q.put(("call", lambda: self.show(it)))
+        else:
+            self.ui_q.put(("call", lambda: self.play(it)))
+        return {"ok": True}
+
+    def api_cancel(self, d):
+        it = self._get(str(d.get("id", "")))
+        if it:
+            self.ui_q.put(("call", lambda: self.cancel(it)))
+        return {"ok": bool(it)}
+
+    def _chip(self, master, name):
+        icon_only = self.compact and name not in ("All", "Web")
+        b = ctk.CTkButton(master, text="" if icon_only else name, width=34 if icon_only else 0, height=30,
+                          corner_radius=15, border_width=1, font=F(12), command=lambda n=name: self.set_source(n),
+                          compound="left")
+        Tooltip(b, "Search everywhere" if name == "All" else ("Search the web" if name == "Web" else f"Search {name}"))
+        dom = engine.SEARCH_SOURCES.get(name)
+        if dom:
+            self.thumbs.get_raw(f"https://www.google.com/s2/favicons?domain={dom}&sz=64",
+                                lambda img, b=b: b.winfo_exists() and b.configure(
+                                    text="" if icon_only else name,
+                                    image=ctk.CTkImage(img.convert("RGBA").resize((32, 32), Image.LANCZOS), size=(16, 16))))
+            if icon_only:
+                b.configure(text=name[0])
+        return b
+
+    def _paint_chips(self):
+        for n, b in self.chip_btns.items():
+            on = n == self.source
+            b.configure(fg_color=ORANGE_SOFT if on else CARD, border_color=ORANGE if on else LINE,
+                        text_color=FG if on else MUTED, hover_color=ORANGE_SOFT if on else CARD_HOVER)
+
+    def set_source(self, name):
+        self.source = name
+        self.settings["search_source"] = name
+        self._save_settings()
+        self._paint_chips()
+        text = self.entry.get().strip()
+        if text and not engine.extract_urls(text):
+            self.search(text)
+        else:
+            self.entry.focus_set()
+
+    def google_search(self):
+        import urllib.parse
+        q = self.entry.get().strip()
+        if q and not engine.extract_urls(q):
+            webbrowser.open("https://www.google.com/search?tbm=vid&q=" + urllib.parse.quote(q))
+        else:
+            webbrowser.open("https://www.google.com/videohp")
+
     def search(self, query: str):
         self.req_id += 1
         rid = self.req_id
-        self.info_url = "https://youtube.com"
-        self._show_loading("Searching YouTube…")
+        src = self.source
+        self.info_url = "https://youtube.com" if src == "YouTube" else ""
+        self._show_loading("Searching everywhere…" if src == "All" else f"Searching {src}…")
 
         def work():
-            try:
-                self.ui_q.put(("results", (rid, self.engine.search(query), query)))
-            except EngineError as e:
-                self.ui_q.put(("info_err", (rid, e, "https://youtube.com")))
-            except Exception as e:
-                self.ui_q.put(("info_err", (rid, EngineError(str(e)[:200], repr(e)), "https://youtube.com")))
+            results, errors = [], []
+            if src in ("All", "YouTube"):
+                try:
+                    results += self.engine.search(query, 8 if src == "All" else 15)
+                except Exception as e:
+                    errors.append(e)
+            if src != "YouTube":
+                try:
+                    web = self.engine.web_search(query, engine.SEARCH_SOURCES.get(src), 12)
+                    if src == "All":
+                        web = [r for r in web if not engine.is_youtube(r.url)]
+                    results += web
+                except Exception as e:
+                    errors.append(e)
+            if not results and errors:
+                e = errors[0]
+                err = e if isinstance(e, EngineError) else EngineError(str(e)[:200], repr(e))
+                self.ui_q.put(("info_err", (rid, err, "")))
+            else:
+                self.ui_q.put(("results", (rid, results, query)))
         threading.Thread(target=work, daemon=True).start()
 
     def start_download(self):
@@ -1030,6 +1201,7 @@ class App:
         else:
             self._render_list()
         self._save_history()
+        return it.id
 
     def play(self, it: Item):
         if it.files:
@@ -1184,6 +1356,11 @@ class App:
                             pass
                         self._set_status(f"Downloaded: {it.title}")
                         self._mark(it)
+                        if self.settings.get("notify", True):
+                            f0 = files[0] if files else ""
+                            notify.toast("Download complete", it.title,
+                                         bridge.file_link("play", f0) if f0 else None,
+                                         bridge.file_link("show", f0) if f0 else None)
                         relist = True
                     self._save_history()
                 elif kind == "fail":
@@ -1224,7 +1401,7 @@ class App:
                 if urls and len(clip) < 2000 and urls[0] != self.info_url:
                     self._clip_url = urls[0]
                     self.banner_lbl.configure(text="Copied link detected:  " + urls[0])
-                    self.banner.grid(row=2, column=0, sticky="ew", padx=24, pady=(4, 2))
+                    self.banner.grid(row=3, column=0, sticky="ew", padx=24, pady=(4, 2))
                     self.root.after(50, lambda: self.banner_lbl.configure(
                         text=ellipsize(self.banner_lbl, "Copied link detected:  " + self._clip_url,
                                        self.banner_lbl.winfo_width() - 10)))
@@ -1328,13 +1505,18 @@ class SettingsDialog:
 
         section("Browser button", "What happens when you press \"Download this video\" in your browser.")
         row = line()
-        self.ext_mode = ctk.CTkSegmentedButton(row, values=["Show qualities", "Best quality at once"],
-                                               font=F(12), selected_color=ORANGE, selected_hover_color=ORANGE_H,
+        self.MODES = {"panel": "Choose on the page", "best": "Best quality at once", "app": "Open in the app"}
+        self.ext_mode = ctk.CTkSegmentedButton(row, values=list(self.MODES.values()), font=F(12),
+                                               selected_color=ORANGE, selected_hover_color=ORANGE_H,
                                                unselected_color=CARD, fg_color=CARD)
-        self.ext_mode.set("Best quality at once" if s.get("ext_mode") == "best" else "Show qualities")
+        self.ext_mode.set(self.MODES.get(s.get("ext_mode", "panel"), self.MODES["panel"]))
         self.ext_mode.grid(row=0, column=0, sticky="w")
         ghost_button(row, "Set up…", lambda: (self.w.destroy(), app.open_ext_setup()), width=90).grid(
             row=0, column=1, padx=10)
+        self.notify = tk.BooleanVar(value=s.get("notify", True))
+        ctk.CTkCheckBox(line(), text="Show a Windows notification when a download finishes", variable=self.notify,
+                        font=F(13), text_color=FG, fg_color=ORANGE, hover_color=ORANGE_H, border_color=DIM).grid(
+            row=0, column=0, sticky="w")
 
         section("Logins — only if a site blocks you",
                 "Choose a browser where you are logged in (YouTube, Facebook, Instagram…); downloads will use that "
@@ -1422,7 +1604,8 @@ class SettingsDialog:
         s["cookies_browser"] = self.browser.get()
         s["cookies_file"] = self.cfile.get().strip()
         s["auto_update"] = self.auto.get()
-        s["ext_mode"] = "best" if self.ext_mode.get().startswith("Best") else "ask"
+        s["ext_mode"] = next((k for k, v in self.MODES.items() if v == self.ext_mode.get()), "panel")
+        s["notify"] = self.notify.get()
         self.app._save_settings()
         self.app._set_status("Settings saved")
         self.w.destroy()
@@ -1471,7 +1654,8 @@ class ExtensionDialog:
         ctk.CTkLabel(body, text="Download button on every video", font=F(18, "bold"), text_color=FG, anchor="w").grid(
             row=0, column=0, sticky="ew", padx=16, pady=(16, 4))
         ctk.CTkLabel(body, text="Like IDM: while a video plays on YouTube, Facebook, Instagram or any site, an orange "
-                                "\"Download this video\" button appears on it. Click it and the video opens here. "
+                                "\"Download this video\" button appears on it. Click it to pick a quality right there on the page — the "
+                                "download runs in the background and you get a notification when it's done. "
                                 "You can also right-click a page or link → \"Download with Video Downloader\".",
                      font=F(12), text_color=MUTED, wraplength=wrap, justify="left", anchor="w").grid(
             row=1, column=0, sticky="ew", padx=16)
@@ -1568,8 +1752,11 @@ class ExtensionDialog:
 
 def main():
     payload = bridge.parse_launch_arg(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] != "--selftest" else None
+    if payload and payload["action"] in ("play", "show"):      # clicked in the "download complete" notification
+        (open_path if payload["action"] == "play" else show_in_folder)(payload["file"])
+        return
     if "--selftest" not in sys.argv and bridge.hand_over_to_running_app(payload):
-        return  # the app is already open: it got the link and came to the front
+        return  # the app is already open: it got the request
     if IS_WIN:
         try:
             import ctypes
@@ -1579,8 +1766,10 @@ def main():
     ctk.set_appearance_mode("dark")
     root = ctk.CTk()
     app = App(root)
-    if payload:
+    if payload and payload["action"] == "add":
         root.after(1200, lambda: app.handle_external(payload))
+    elif payload and payload["action"] == "start":     # woken by the browser button: stay out of the way
+        root.after(300, root.iconify)
     if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
         root.after(4000, root.destroy)
     root.mainloop()

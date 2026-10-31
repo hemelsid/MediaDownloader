@@ -24,7 +24,7 @@
       svg{width:16px;height:16px;flex:none}
     </style>
     <div class="wrap">
-      <button class="b" title="Send this video to Video Downloader">
+      <button class="b" title="Choose a quality and download">
         <svg viewBox="0 0 24 24" fill="#fff"><path d="M10.5 3h3v8.5h3.2L12 17l-4.7-5.5h3.2zM4 17h2.5v2.5h11V17H20v5H4z"/></svg>
         <span>Download this video</span>
       </button>
@@ -129,17 +129,11 @@
     if (!target) return;
     const src = target.currentSrc && /^https?:/.test(target.currentSrc) ? target.currentSrc : "";
     const data = { url: videoLink(target), page: location.href, src, title: caption(target) };
-    btn.querySelector("span").textContent = "Sending…";
-    chrome.runtime.sendMessage({ type: "add", data }, (res) => {
-      btn.querySelector("span").textContent = "Download this video";
-      if (chrome.runtime.lastError || !res || !res.ok) {
-        toast("Couldn't reach Video Downloader. Open the app on your PC and try again.");
-      } else if (res.launched) {
-        toast("Opening Video Downloader… choose a quality there.");
-      } else {
-        toast("Sent to Video Downloader ✓ — choose a quality in the app.");
-      }
-    });
+    if (window.top === window && window.__vdPanel) {
+      window.__vdPanel.open(data);                     // quality picker right here on the page
+    } else {
+      chrome.runtime.sendMessage({ type: "to-top", data }, () => void chrome.runtime.lastError);
+    }
   }, true);
 
   close.addEventListener("click", (e) => {

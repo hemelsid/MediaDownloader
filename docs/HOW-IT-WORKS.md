@@ -63,15 +63,32 @@ are tried. If YouTube still blocks: switch Wi-Fi/mobile data or log in to YouTub
   the page itself for YouTube watch/shorts, otherwise the post link found close to the video
   (never climbing into containers much bigger than the video, so neighbours' links aren't taken),
   plus the video's own file (`currentSrc`, if it's a real URL) and caption.
-- `background.js` POSTs `{url, src, title, page}` to `http://127.0.0.1:47811/add`. If the app isn't
-  running it opens `videodownloader://add?url=…`, which Windows hands to the app (registered by the
-  installer under HKCU). Right-click menu "Download with Video Downloader" uses the same path.
+- Clicking opens `panel.js` — a quality picker on the page (top frame only; buttons on videos inside
+  embedded frames ask the background to open the panel on the main page). Flow, all through
+  `background.js` → the app's local API:
+  `/info {url, src, title}` → qualities + token (the app runs yt-dlp; falls back to the video file) ·
+  `/download {token, kind, index}` → download id · `/status?id=` polled every second for progress ·
+  `/open {id, action}` play / show in folder · `/cancel`. Thumbnails are fetched by the background
+  and passed as data (pages often block outside images).
+- If the app isn't running, the background opens `videodownloader://start` (registered by the
+  installer under HKCU); the app starts minimized and the panel continues once `/ping` answers.
+- When a download finishes the app shows a Windows toast (`notify.py`, PowerShell + WinRT, app id
+  `hemelsid.VideoDownloader` set on the Start-menu shortcut) with Play / Show in folder, which use
+  `videodownloader://play?file=` / `show?file=` links.
+- Settings → Browser button: "Choose on the page" (panel), "Best quality at once", "Open in the app".
 - `bridge.py` (in the app) serves only 127.0.0.1, accepts requests only from extension origins (web
   pages get 403, no CORS), and makes the app single-instance: a second launch passes its link to the
   running app and exits. The app shows the preview (or, if chosen in Settings, downloads best quality).
 - When the page link fails, the app retries with the video file the button sent.
-- Tested with Playwright in real Chromium: on a feed with two videos, playing the second sends the
-  second post's link and caption.
+- Tested with Playwright in real Chromium together with the real app: on a feed with two videos,
+  playing the second and clicking the button opens the panel for the second post; choosing a quality
+  downloads the file and the panel shows Downloaded with Play / Show in folder.
+
+## Search (PC)
+- "Search in" chips: YouTube uses yt-dlp `ytsearch`; Facebook / Instagram / TikTok / X / Dailymotion /
+  Vimeo use web results limited to that site (`site:`), Web is the open web, All = YouTube results +
+  web video results. Web results come from DuckDuckGo's plain HTML page (no API key). "Google ↗" opens
+  Google video search in the browser (Google has no free search API for apps).
 
 ## Not possible
 DRM services (Netflix, Prime Video, Disney+/Hotstar, Hoichoi, Chorki, Spotify…) — the app shows an

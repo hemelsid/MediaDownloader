@@ -1,13 +1,17 @@
 """
 Connection between the browser extension and the app.
 
-- The app listens on http://127.0.0.1:47811 (this PC only). The extension sends the video link there.
+- The app listens on http://127.0.0.1:47811 (this PC only, extension origins only).
+  The extension asks for a video's qualities (/info), starts a download (/download), follows its
+  progress (/status) and opens the finished file (/open) — all without bringing the app forward.
 - Only one copy of the app runs: a second launch passes its link to the running one and exits.
-- videodownloader://add?url=… links (used when the app is closed) open the app with that video.
+- videodownloader://… links: add?url= (open a video), start (wake the app quietly),
+  play?file= / show?file= (from the "download complete" notification).
 """
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import urllib.parse
@@ -19,20 +23,24 @@ PROTOCOL = "videodownloader"
 
 
 def parse_launch_arg(arg: str) -> dict | None:
-    """'videodownloader://add?url=…' or a plain http(s) link -> {url, title, src}."""
+    """Command-line argument -> what to do. Plain http(s) links open that video."""
     if not arg:
         return None
     if arg.lower().startswith(PROTOCOL + ":"):
-        q = urllib.parse.urlparse(arg).query
-        if not q and "?" in arg:
-            q = arg.split("?", 1)[1]
-        p = urllib.parse.parse_qs(q)
-        url = (p.get("url") or [""])[0]
+        u = urllib.parse.urlparse(arg)
+        action = (u.netloc or u.path.strip("/").split("/")[0] or "").lower()
+        q = urllib.parse.parse_qs(u.query or (arg.split("?", 1)[1] if "?" in arg else ""))
+        get = lambda k: (q.get(k) or [""])[0]
+        if action in ("play", "show") and get("file"):
+            return {"action": action, "file": get("file")}
+        if action == "start":
+            return {"action": "start"}
+        url = get("url")
         if url.startswith(("http://", "https://")):
-            return {"url": url, "title": (p.get("title") or [""])[0], "src": (p.get("src") or [""])[0]}
-        return None
+            return {"action": "add", "url": url, "title": get("title"), "src": get("src")}
+        return {"action": "start"}
     if arg.startswith(("http://", "https://")):
-        return {"url": arg, "title": "", "src": ""}
+        return {"action": "add", "url": arg, "title": "", "src": ""}
     return None
 
 
@@ -49,20 +57,22 @@ def _call(path: str, data: dict | None = None, timeout=1.5) -> dict | None:
 
 
 def hand_over_to_running_app(payload: dict | None) -> bool:
-    """True if another copy of the app is already running (and got the link / was brought forward)."""
+    """True if another copy of the app is already running (it got the request)."""
     info = _call("/ping")
     if not info or info.get("app") != "VideoDownloader":
         return False
-    if payload:
+    if payload and payload.get("action") == "add":
         _call("/add", payload)
-    else:
+    elif not payload:
         _call("/focus", {})
     return True
 
 
 class Bridge:
-    def __init__(self, on_add, on_focus, version: str):
-        self.on_add, self.on_focus, self.version = on_add, on_focus, version
+    """api: object with ext_add(d), focus(), api_info(d), api_download(d), api_status(id), api_open(d), api_cancel(d)."""
+
+    def __init__(self, api, version: str):
+        self.api, self.version = api, version
         self.last_seen = 0.0          # last time the extension talked to us
         self.server = None
 
@@ -73,11 +83,18 @@ class Bridge:
             def log_message(self, *a):
                 pass
 
+            def _origin(self) -> str:
+                return self.headers.get("Origin", "")
+
             def _allowed(self) -> bool:
                 # Only the extension (or this app itself) may talk to us — never ordinary web pages.
-                origin = self.headers.get("Origin", "")
-                return origin == "" or origin.startswith(("chrome-extension://", "moz-extension://",
-                                                          "extension://", "safari-web-extension://"))
+                o = self._origin()
+                return o == "" or o.startswith(("chrome-extension://", "moz-extension://", "extension://",
+                                                "safari-web-extension://"))
+
+            def _seen(self):
+                if "extension://" in self._origin():
+                    bridge.last_seen = time.time()
 
             def _reply(self, code: int, body: dict):
                 raw = json.dumps(body).encode()
@@ -93,10 +110,13 @@ class Bridge:
             def do_GET(self):
                 if not self._allowed():
                     return self._reply(403, {"ok": False})
-                if self.path.startswith("/ping"):
-                    if "extension://" in self.headers.get("Origin", ""):
-                        bridge.last_seen = time.time()
+                self._seen()
+                path, _, query = self.path.partition("?")
+                if path == "/ping":
                     return self._reply(200, {"app": "VideoDownloader", "version": bridge.version})
+                if path == "/status":
+                    q = urllib.parse.parse_qs(query)
+                    return self._reply(200, bridge.api.api_status((q.get("id") or [""])[0]))
                 self._reply(404, {"ok": False})
 
             def do_POST(self):
@@ -107,18 +127,30 @@ class Bridge:
                     data = json.loads(self.rfile.read(n) or b"{}")
                 except Exception:
                     return self._reply(400, {"ok": False})
-                if self.path.startswith("/add"):
-                    url = str(data.get("url", ""))
-                    if not url.startswith(("http://", "https://")):
-                        return self._reply(400, {"ok": False})
-                    if "extension://" in self.headers.get("Origin", ""):
-                        bridge.last_seen = time.time()
-                    bridge.on_add({"url": url, "title": str(data.get("title", ""))[:300],
-                                   "src": str(data.get("src", "")), "page": str(data.get("page", ""))})
-                    return self._reply(200, {"ok": True})
-                if self.path.startswith("/focus"):
-                    bridge.on_focus()
-                    return self._reply(200, {"ok": True})
+                self._seen()
+                path = self.path.partition("?")[0]
+                try:
+                    if path in ("/add", "/info"):
+                        url = str(data.get("url", ""))
+                        if not url.startswith(("http://", "https://")):
+                            return self._reply(400, {"ok": False, "error": "Not a web link"})
+                        d = {"url": url, "title": str(data.get("title", ""))[:300],
+                             "src": str(data.get("src", "")), "page": str(data.get("page", ""))}
+                        if path == "/add":
+                            bridge.api.ext_add(d)
+                            return self._reply(200, {"ok": True})
+                        return self._reply(200, bridge.api.api_info(d))
+                    if path == "/download":
+                        return self._reply(200, bridge.api.api_download(data))
+                    if path == "/open":
+                        return self._reply(200, bridge.api.api_open(data))
+                    if path == "/cancel":
+                        return self._reply(200, bridge.api.api_cancel(data))
+                    if path == "/focus":
+                        bridge.api.focus()
+                        return self._reply(200, {"ok": True})
+                except Exception as e:  # never let one bad request kill the server
+                    return self._reply(500, {"ok": False, "error": str(e)[:200]})
                 self._reply(404, {"ok": False})
 
         try:
@@ -131,3 +163,7 @@ class Bridge:
     def stop(self):
         if self.server:
             self.server.shutdown()
+
+
+def file_link(action: str, path: str) -> str:
+    return f"{PROTOCOL}://{action}?file=" + urllib.parse.quote(os.path.abspath(path))

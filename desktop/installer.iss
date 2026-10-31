@@ -40,7 +40,7 @@ Root: HKCU; Subkey: "Software\Classes\videodownloader\DefaultIcon"; ValueType: s
 Root: HKCU; Subkey: "Software\Classes\videodownloader\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\VideoDownloader.exe"" ""%1"""
 
 [Icons]
-Name: "{group}\Video Downloader"; Filename: "{app}\VideoDownloader.exe"
+Name: "{group}\Video Downloader"; Filename: "{app}\VideoDownloader.exe"; AppUserModelID: "hemelsid.VideoDownloader"
 Name: "{group}\Uninstall Video Downloader"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Video Downloader"; Filename: "{app}\VideoDownloader.exe"; Tasks: desktopicon
 
