@@ -23,20 +23,36 @@ async function appRunning() {
   }
 }
 
-// Start the app quietly through its link handler (videodownloader://start) and wait until it answers.
+const HOST = "com.hemelsid.videodownloader";
+
+async function waitForApp(seconds) {
+  for (let i = 0; i < seconds * 2; i++) {
+    if (await appRunning()) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+// Make sure the app is running. The browser starts it directly through "native messaging"
+// (registered by the app) — no prompts, nothing to click.
 async function wakeApp() {
   if (await appRunning()) return true;
+  try {
+    await new Promise((res) => chrome.runtime.sendNativeMessage(HOST, { cmd: "start" }, () => {
+      void chrome.runtime.lastError;   // the app may answer or not — we just check below
+      res();
+    }));
+  } catch (e) { /* not registered yet */ }
+  return await waitForApp(15);
+}
+
+// Last resort (user pressed "Start the app"): open the app's link in a visible tab so the browser can ask.
+async function launchViaLink() {
   let tab = null;
-  try { tab = await chrome.tabs.create({ url: "videodownloader://start", active: false }); } catch (e) { /* ignore */ }
-  for (let i = 0; i < 40; i++) {           // up to ~20 s
-    await new Promise((r) => setTimeout(r, 500));
-    if (await appRunning()) {
-      if (tab) chrome.tabs.remove(tab.id).catch(() => {});
-      return true;
-    }
-  }
-  if (tab) chrome.tabs.remove(tab.id).catch(() => {});
-  return false;
+  try { tab = await chrome.tabs.create({ url: "videodownloader://start", active: true }); } catch (e) { /* ignore */ }
+  const ok = await waitForApp(25);
+  if (tab && ok) chrome.tabs.remove(tab.id).catch(() => {});
+  return ok;
 }
 
 async function thumbData(url) {
@@ -60,6 +76,7 @@ async function handle(msg) {
     case "cancel": return await call("/cancel", msg.data);
     case "thumb": return { data: await thumbData(msg.url) };
     case "ping": return { ok: await appRunning() };
+    case "launch": return { ok: await launchViaLink() };
     case "add": {                                          // "open in the app" (popup, old versions)
       if (!(await wakeApp())) return { ok: false };
       return await call("/add", msg.data);

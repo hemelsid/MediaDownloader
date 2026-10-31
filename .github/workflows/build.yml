@@ -47,7 +47,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install build tools
-        run: python -m pip install pyinstaller pillow customtkinter==6.0.0
+        run: python -m pip install pyinstaller pillow customtkinter==6.0.0 pystray
       - name: Version and icon
         shell: pwsh
         run: |
@@ -58,7 +58,7 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --name VideoDownloader
           --icon desktop/icon.ico --paths desktop
           --collect-data customtkinter
-          --hidden-import PIL._tkinter_finder
+          --hidden-import PIL._tkinter_finder --hidden-import pystray._win32
           desktop/video_downloader.py
       - name: Add engine (yt-dlp, ffmpeg, Deno)
         shell: pwsh

@@ -2,8 +2,9 @@
   "manifest_version": 3,
   "name": "Video Downloader — download button",
   "short_name": "Video Downloader",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Shows a \"Download this video\" button on videos (YouTube, Facebook, Instagram and more). Pick a quality right on the page; the Video Downloader app on this PC downloads it in the background.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwRfmldbd3M5hN8YPppsz4rVwCkEeQbftai6Csv/VLhVbEY0DsK2fbK8NvC/9hr+k9qiNRxAG9eB23pxWN6ikaQNTx6bqDY/R6EdND/NVEeuy5GzYVERdNttCMf9tkMj+zRPuHzS39dQdK9rIgkPibvIG9s94kWqAjgMKbUTUaCbnwyicYEXmG39agtjZT5ofLAFEuTxh/aINLbihu5WplbrBMu7CXhzjv3m4Zb74F5wfAyGYKDIdXDOXh1NllEUEegggFx4bzg/W7krkbUSj7r3W/aZ/54vOSNXZX8kJ7EtoJHPcsvxmGF/gBcmDdL8WqVje7grClTb0lKLhHkk+aQIDAQAB",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -24,7 +25,8 @@
   "permissions": [
     "contextMenus",
     "storage",
-    "activeTab"
+    "activeTab",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "http://127.0.0.1:47811/*"

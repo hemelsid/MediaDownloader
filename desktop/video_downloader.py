@@ -31,6 +31,7 @@ from engine import EngineError, MediaInfo, Quality
 from icons import make_icon
 import bridge
 import notify
+import winintegration as wi
 
 APP = "Video Downloader"
 VERSION = "dev"
@@ -436,6 +437,10 @@ class App:
         self.ext_infos: dict[str, MediaInfo] = {}
         self.bridge = bridge.Bridge(self, VERSION)
         self.bridge.start()
+        # Always reachable by the browser button: tray icon, start with Windows, browser can start us
+        self.tray = wi.Tray(make_icon(64), on_open=lambda: self.ui_q.put(("call", self.bring_to_front)),
+                            on_quit=lambda: self.ui_q.put(("call", self.quit))) if wi.IS_WIN else None
+        threading.Thread(target=self._integrate, daemon=True).start()
 
         root.after(100, self._pump)
         root.after(500, self._dispatch)
@@ -477,7 +482,7 @@ class App:
     def _load_settings(self) -> dict:
         s = {"folder": default_folder(), "parallel": 3, "clipboard": True, "auto_update": True,
              "cookies_browser": "None", "cookies_file": "", "last_update": 0, "ext_mode": "panel",
-             "search_source": "All", "notify": True}
+             "search_source": "All", "notify": True, "autostart": True, "background": True}
         try:
             with open(os.path.join(data_dir(), "settings.json"), encoding="utf-8") as f:
                 s.update(json.load(f))
@@ -991,7 +996,7 @@ class App:
     def bring_to_front(self):
         r = self.root
         try:
-            if r.state() == "iconic":
+            if r.state() in ("iconic", "withdrawn"):
                 r.deiconify()
             r.lift()
             r.attributes("-topmost", True)
@@ -1430,17 +1435,46 @@ class App:
             note = "up to date" if ("up to date" in msg or "updated" in msg) else "update check failed"
             self.ui_q.put(("status", f"Ready  •  engine yt-dlp {v} ({note})"))
 
+    def _integrate(self):
+        try:
+            wi.register_native_host(data_dir())
+            wi.set_autostart(self.settings.get("autostart", True))
+        except Exception:
+            pass
+
+    @property
+    def can_hide(self) -> bool:
+        return bool(self.tray and self.tray.ok and self.settings.get("background", True))
+
+    def hide_to_tray(self):
+        self.root.withdraw()
+
     def _on_close(self):
-        active = [i for i in self.items if i.active]
-        if active and not messagebox.askyesno(APP, f"{len(active)} download(s) still running. Quit anyway?",
-                                              parent=self.root):
+        """Window ✕: keep running in the tray (so the browser button works), like IDM."""
+        if self.can_hide:
+            self.hide_to_tray()
+            if not self.settings.get("tray_tip_shown"):
+                self.settings["tray_tip_shown"] = True
+                self._save_settings()
+                self.tray.notify("Video Downloader is still running",
+                                 "It stays in the tray so the browser button works. Right-click the icon → Quit to close it.")
             return
+        self.quit()
+
+    def quit(self):
+        active = [i for i in self.items if i.active]
+        if active:
+            self.bring_to_front()
+            if not messagebox.askyesno(APP, f"{len(active)} download(s) still running. Quit anyway?", parent=self.root):
+                return
         for i in active:
             i.status = "Cancelled"
             self.engine.cancel(i.id)
         self._save_history()
         self._save_settings()
         self.bridge.stop()
+        if self.tray:
+            self.tray.stop()
         self.root.destroy()
 
 
@@ -1513,6 +1547,15 @@ class SettingsDialog:
         self.ext_mode.grid(row=0, column=0, sticky="w")
         ghost_button(row, "Set up…", lambda: (self.w.destroy(), app.open_ext_setup()), width=90).grid(
             row=0, column=1, padx=10)
+        self.autostart = tk.BooleanVar(value=s.get("autostart", True))
+        self.background = tk.BooleanVar(value=s.get("background", True))
+        if IS_WIN:
+            ctk.CTkCheckBox(line(), text="Start with Windows (quietly, in the tray) — the browser button always works",
+                            variable=self.autostart, font=F(13), text_color=FG, fg_color=ORANGE, hover_color=ORANGE_H,
+                            border_color=DIM).grid(row=0, column=0, sticky="w")
+            ctk.CTkCheckBox(line(), text="Keep running in the tray when the window is closed", variable=self.background,
+                            font=F(13), text_color=FG, fg_color=ORANGE, hover_color=ORANGE_H,
+                            border_color=DIM).grid(row=0, column=0, sticky="w")
         self.notify = tk.BooleanVar(value=s.get("notify", True))
         ctk.CTkCheckBox(line(), text="Show a Windows notification when a download finishes", variable=self.notify,
                         font=F(13), text_color=FG, fg_color=ORANGE, hover_color=ORANGE_H, border_color=DIM).grid(
@@ -1606,6 +1649,9 @@ class SettingsDialog:
         s["auto_update"] = self.auto.get()
         s["ext_mode"] = next((k for k, v in self.MODES.items() if v == self.ext_mode.get()), "panel")
         s["notify"] = self.notify.get()
+        s["autostart"] = self.autostart.get()
+        s["background"] = self.background.get()
+        threading.Thread(target=wi.set_autostart, args=(s["autostart"],), daemon=True).start()
         self.app._save_settings()
         self.app._set_status("Settings saved")
         self.w.destroy()
@@ -1701,7 +1747,8 @@ class ExtensionDialog:
 
         step(4, 6, "Done — play any video",
              "The orange button appears on the video. Pin the extension (puzzle icon → pin) to see its status. "
-             "Keep this app installed; if it's closed, the button opens it for you.", has_body=False)
+             "The app starts with Windows and waits in the tray, so the button always works — if it was quit, "
+             "the button starts it. Already added an older version? Remove it and do step 3 again.", has_body=False)
 
         bottom = ctk.CTkFrame(w, fg_color=BG, corner_radius=0)
         bottom.grid(row=1, column=0, sticky="ew")
@@ -1751,12 +1798,21 @@ class ExtensionDialog:
 
 
 def main():
-    payload = bridge.parse_launch_arg(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] != "--selftest" else None
+    if wi.is_native_host_launch(sys.argv):            # started by the browser button to wake the app
+        wi.run_native_host(lambda: bridge._call("/ping") is not None)
+        return
+    background = "--background" in sys.argv
+    args = [a for a in sys.argv[1:] if a not in ("--background", "--selftest")]
+    payload = bridge.parse_launch_arg(args[0]) if args else None
     if payload and payload["action"] in ("play", "show"):      # clicked in the "download complete" notification
         (open_path if payload["action"] == "play" else show_in_folder)(payload["file"])
         return
-    if "--selftest" not in sys.argv and bridge.hand_over_to_running_app(payload):
-        return  # the app is already open: it got the request
+    if "--selftest" not in sys.argv:
+        if background and not payload:
+            if bridge._call("/ping") is not None:
+                return          # already running in the background — nothing to do
+        elif bridge.hand_over_to_running_app(payload):
+            return              # the app is already open: it got the request and came forward
     if IS_WIN:
         try:
             import ctypes
@@ -1768,8 +1824,8 @@ def main():
     app = App(root)
     if payload and payload["action"] == "add":
         root.after(1200, lambda: app.handle_external(payload))
-    elif payload and payload["action"] == "start":     # woken by the browser button: stay out of the way
-        root.after(300, root.iconify)
+    elif background or (payload and payload["action"] == "start"):   # Windows start-up / woken by the browser
+        root.after(10, lambda: app.hide_to_tray() if app.can_hide else root.iconify())
     if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
         root.after(4000, root.destroy)
     root.mainloop()

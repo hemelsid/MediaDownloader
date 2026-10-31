@@ -4,6 +4,16 @@ Every push to `main` builds a new Release (`v1.<build number>`); all Releases ar
 Earlier test builds v1–v6 were made before this repo existed; they are in Releases as v0.1–v0.6
 (signed with different keys, so uninstall before installing one of them).
 
+## v1.8 — 2026-11-01
+- **Fixed: having to open the app before using the browser button.** The app now starts with Windows
+  and waits quietly in the system tray (like IDM). Closing the window keeps it in the tray; use the
+  tray icon → Quit to really exit. If it was quit, the browser button now starts it by itself
+  (native messaging — works in Brave, Chrome, Edge, Vivaldi) and carries on with the download panel.
+- If the app can't be started, the panel says so with a **Start the app** button instead of an error.
+- Settings: "Start with Windows" and "Keep running in the tray when the window is closed" (both on).
+- Browser extension 1.2.0 with a fixed ID. **One-time step:** in the browser's extensions page click
+  Remove on the old Video Downloader extension, then Load unpacked the same folder again.
+
 ## v1.7 — 2026-11-01
 - **Browser button now works right on the page (like IDM):** click "Download this video" and a panel
   opens beside the video with its thumbnail, title and every quality with its size (Video / Audio).

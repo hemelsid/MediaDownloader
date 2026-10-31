@@ -1,3 +1,4 @@
 yt-dlp[default]
 pillow
 customtkinter==6.0.0
+pystray

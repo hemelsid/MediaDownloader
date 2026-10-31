@@ -39,6 +39,15 @@ Root: HKCU; Subkey: "Software\Classes\videodownloader"; ValueType: string; Value
 Root: HKCU; Subkey: "Software\Classes\videodownloader\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\VideoDownloader.exe,0"
 Root: HKCU; Subkey: "Software\Classes\videodownloader\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\VideoDownloader.exe"" ""%1"""
 
+; start with Windows, quietly in the tray (can be turned off in the app's Settings)
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "VideoDownloader"; ValueData: """{app}\VideoDownloader.exe"" --background"; Flags: uninsdeletevalue
+; the app registers itself so the browser extension can start it (native messaging) — removed on uninstall
+Root: HKCU; Subkey: "Software\Google\Chrome\NativeMessagingHosts\com.hemelsid.videodownloader"; Flags: uninsdeletekey dontcreatekey
+Root: HKCU; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\com.hemelsid.videodownloader"; Flags: uninsdeletekey dontcreatekey
+Root: HKCU; Subkey: "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.hemelsid.videodownloader"; Flags: uninsdeletekey dontcreatekey
+Root: HKCU; Subkey: "Software\Chromium\NativeMessagingHosts\com.hemelsid.videodownloader"; Flags: uninsdeletekey dontcreatekey
+Root: HKCU; Subkey: "Software\Vivaldi\NativeMessagingHosts\com.hemelsid.videodownloader"; Flags: uninsdeletekey dontcreatekey
+
 [Icons]
 Name: "{group}\Video Downloader"; Filename: "{app}\VideoDownloader.exe"; AppUserModelID: "hemelsid.VideoDownloader"
 Name: "{group}\Uninstall Video Downloader"; Filename: "{uninstallexe}"

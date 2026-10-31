@@ -70,8 +70,17 @@ are tried. If YouTube still blocks: switch Wi-Fi/mobile data or log in to YouTub
   `/download {token, kind, index}` → download id · `/status?id=` polled every second for progress ·
   `/open {id, action}` play / show in folder · `/cancel`. Thumbnails are fetched by the background
   and passed as data (pages often block outside images).
-- If the app isn't running, the background opens `videodownloader://start` (registered by the
-  installer under HKCU); the app starts minimized and the panel continues once `/ping` answers.
+- Keeping the app reachable (v1.8): the installer adds an HKCU `Run` value
+  (`VideoDownloader.exe --background`), so the app starts with Windows hidden in the system tray
+  (pystray). Closing the window only hides it to the tray; "Quit" in the tray menu really exits.
+- If the app still isn't running, the extension calls `chrome.runtime.sendNativeMessage("com.hemelsid.videodownloader")`.
+  The app registers itself as a native-messaging host for Chrome, Edge, Brave, Chromium and Vivaldi
+  (HKCU `…\NativeMessagingHosts\com.hemelsid.videodownloader` → `%APPDATA%\VideoDownloader\native-host.json`).
+  The browser runs `VideoDownloader.exe chrome-extension://…`; that copy starts the real app detached with
+  `--background`, answers `{ok:true}` and exits. The extension's ID is fixed by the `key` in its manifest
+  (`bnkgghgbeofkfjgbjhpkeanomfiapcmp`) so the host can allow only it.
+- Last fallback: a visible tab with `videodownloader://start`; if that fails too, the panel shows
+  "The app isn't running" with a **Start the app** button.
 - When a download finishes the app shows a Windows toast (`notify.py`, PowerShell + WinRT, app id
   `hemelsid.VideoDownloader` set on the Start-menu shortcut) with Play / Show in folder, which use
   `videodownloader://play?file=` / `show?file=` links.

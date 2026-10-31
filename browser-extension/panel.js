@@ -99,6 +99,20 @@
     if (retry) root.getElementById("retry").addEventListener("click", retry);
   }
 
+  function notRunning(data) {
+    bd.innerHTML = `<div class="center"><div style="font-size:30px" class="bad">⚠</div>
+      <div style="margin:8px 0 6px;font-weight:600">The Video Downloader app isn't running</div>
+      <div class="muted" style="margin-bottom:14px">Start it once — after that it starts with Windows and stays in the tray,
+        so this button always works.</div>
+      <button class="btn pr" id="start">Start the app</button></div>`;
+    root.getElementById("start").addEventListener("click", async () => {
+      loading("Starting Video Downloader…", "If your browser asks, choose Open");
+      const r = await send({ type: "launch" });
+      if (r && r.ok) open(data);
+      else error("Couldn't start the app. Open Video Downloader from the Start menu, then try again.", () => open(data));
+    });
+  }
+
   async function open(data) {
     current = { data, info: null };
     show();
@@ -106,7 +120,7 @@
     const r = await send({ type: "info", data });
     if (current.data !== data) return;              // another video was opened meanwhile
     if (!r || !r.ok) {
-      if (r && r.notRunning) return error("Video Downloader isn't open on this PC. Open the app (it's in the Start menu), then try again.", () => open(data));
+      if (r && r.notRunning) return notRunning(data);
       return error((r && r.error) || "Couldn't get this video.", r && r.drm ? null : () => open(data));
     }
     if (r.mode === "app") { hide(); return; }

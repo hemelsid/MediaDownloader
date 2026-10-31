@@ -34,8 +34,11 @@ In the app click **Browser button** and follow the 4 steps (about a minute):
 4. Play any video — an orange **Download this video** button appears on it. Click it: a panel opens
    beside the video with every quality and its size. Pick one — it downloads in the background, the
    panel shows the progress, and a Windows notification tells you when it's done (Play / Show in folder).
-If the app is closed, clicking the button starts it quietly. After updating the app, press the reload
-icon on the extension in the browser's extensions page once.
+The app starts with Windows and waits in the system tray (closing the window keeps it there), so the
+button always works. If you quit it from the tray, the button starts it again by itself (native messaging,
+no prompts). Both can be turned off in **Settings**.
+**Updating from v1.7 or older:** in the extensions page click **Remove** on the old Video Downloader
+extension, then **Load unpacked** the same folder again (the extension got a fixed ID in v1.8).
 
 ## What's inside
 | File | Purpose |
