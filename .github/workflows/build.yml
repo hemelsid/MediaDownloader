@@ -52,7 +52,7 @@ jobs:
         shell: pwsh
         run: |
           "VERSION = `"1.${{ github.run_number }}`"" | Out-File -Encoding utf8 desktop/_version.py
-          python -c "import sys; sys.path.insert(0,'desktop'); import video_downloader as v; i=v.make_icon(256); i.save('desktop/icon.png'); i.save('desktop/icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+          python desktop/icons.py desktop
       - name: Build app
         run: >
           pyinstaller --noconfirm --clean --windowed --name VideoDownloader
@@ -65,6 +65,7 @@ jobs:
         run: |
           $app = "dist/VideoDownloader"
           Copy-Item desktop/icon.png, desktop/icon.ico $app/
+          Copy-Item -Recurse browser-extension "$app/extension"
           $bin = New-Item -ItemType Directory -Force "$app/bin"
           Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile "$bin/yt-dlp.exe"
           Invoke-WebRequest https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip -OutFile ff.zip
@@ -100,6 +101,7 @@ jobs:
           $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" | Select-Object -First 1
           & $iscc.FullName "/DAppVersion=1.${{ github.run_number }}" desktop/installer.iss
           Compress-Archive dist/VideoDownloader/* out/VideoDownloader-Windows-portable.zip
+          Compress-Archive browser-extension/* out/VideoDownloader-Browser-Extension.zip
           Get-ChildItem out
       - uses: actions/upload-artifact@v4
         with:
@@ -131,5 +133,7 @@ jobs:
             ### 💻 PC (Windows 10/11, 64-bit)
             - `VideoDownloader-Windows-Setup.exe` — installer (no admin needed, adds a desktop shortcut) ✅
             - `VideoDownloader-Windows-portable.zip` — no install: unzip and run `VideoDownloader.exe`
+            - `VideoDownloader-Browser-Extension.zip` — the "Download this video" button for Chrome / Edge / Brave
+              (already included in the PC app — in the app click **Browser button** for the 1-minute setup)
 
             New versions install over the old one. Every older version stays below in Releases.

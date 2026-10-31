@@ -46,6 +46,7 @@ are tried. If YouTube still blocks: switch Wi-Fi/mobile data or log in to YouTub
   sizes, file name, playlist) with a fixed Download button, download cards with filters, and a
   Settings dialog (scrolling body, fixed Save bar). Window size adapts to the screen; long text is
   shortened with "…" by measuring the real font. Settings and history live in `%APPDATA%\VideoDownloader`.
+- `icons.py` — draws the app icon at every size (sharp ICO for title bar / taskbar / installer).
 - `engine.py` — runs the standalone `yt-dlp.exe` as a separate process (so it can self-update with
   `-U`), with `--ffmpeg-location bin` and `--js-runtimes deno:bin\deno.exe` (YouTube needs a JS
   runtime). Progress comes from a custom `--progress-template`, final paths from
@@ -54,6 +55,23 @@ are tried. If YouTube still blocks: switch Wi-Fi/mobile data or log in to YouTub
 - Built on GitHub's Windows runner with PyInstaller (one folder) + Inno Setup (per-user install in
   `%LOCALAPPDATA%\Programs\Video Downloader`, no admin). The build also starts the app once as a
   smoke test.
+
+## Browser button (`browser-extension/`, `desktop/bridge.py`)
+- Manifest V3 extension for Chrome / Edge / Brave. `content.js` picks the playing (or hovered, or
+  most visible) `<video>` on the page every 0.7 s and shows a "Download this video" button at its
+  top-right (inside a closed shadow root so pages can't restyle it). On click it works out the link:
+  the page itself for YouTube watch/shorts, otherwise the post link found close to the video
+  (never climbing into containers much bigger than the video, so neighbours' links aren't taken),
+  plus the video's own file (`currentSrc`, if it's a real URL) and caption.
+- `background.js` POSTs `{url, src, title, page}` to `http://127.0.0.1:47811/add`. If the app isn't
+  running it opens `videodownloader://add?url=…`, which Windows hands to the app (registered by the
+  installer under HKCU). Right-click menu "Download with Video Downloader" uses the same path.
+- `bridge.py` (in the app) serves only 127.0.0.1, accepts requests only from extension origins (web
+  pages get 403, no CORS), and makes the app single-instance: a second launch passes its link to the
+  running app and exits. The app shows the preview (or, if chosen in Settings, downloads best quality).
+- When the page link fails, the app retries with the video file the button sent.
+- Tested with Playwright in real Chromium: on a feed with two videos, playing the second sends the
+  second post's link and caption.
 
 ## Not possible
 DRM services (Netflix, Prime Video, Disney+/Hotstar, Hoichoi, Chorki, Spotify…) — the app shows an

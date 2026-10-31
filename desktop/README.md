@@ -24,12 +24,25 @@ Everything needed is included — no Python, ffmpeg or anything else to install.
   (Firefox works best on Windows) or choose a `cookies.txt` file.
 - The engine (yt-dlp) updates itself once a day; **Settings → Update now** forces it.
 
+## Download button in your browser (like IDM)
+In the app click **Browser button** and follow the 4 steps (about a minute):
+1. Open your browser's extensions page (the app has Chrome / Edge / Brave buttons for this).
+2. Turn on **Developer mode**.
+3. Click **Load unpacked** and pick the folder the app shows
+   (`%LOCALAPPDATA%\Programs\Video Downloader\extension`).
+4. Play any video — an orange **Download this video** button appears on it. Click it and the video
+   opens in the app. Right-click a page or link → **Download with Video Downloader** also works.
+If the app is closed, clicking the button opens it.
+
 ## What's inside
 | File | Purpose |
 |---|---|
 | `video_downloader.py` | The window (Tkinter, dark theme) |
 | `engine.py` | Runs yt-dlp / ffmpeg / Deno, builds the quality list, progress, retries, error messages |
-| `installer.iss` | Inno Setup script for the installer |
+| `bridge.py` | Local link with the browser extension (127.0.0.1:47811), single instance, `videodownloader://` links |
+| `icons.py` | Draws the app icon sharply at every size |
+| `installer.iss` | Inno Setup script for the installer (also registers `videodownloader://`) |
+| `../browser-extension/` | The Chrome / Edge / Brave extension |
 
 The release build bundles `yt-dlp.exe`, `ffmpeg.exe`/`ffprobe.exe` and `deno.exe` (needed for
 YouTube) in a `bin` folder next to the app.

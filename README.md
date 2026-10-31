@@ -13,6 +13,8 @@ video, tap the orange ⬇ button, pick a quality and download. Powered by
 
 **PC (Windows 10/11):** download `VideoDownloader-Windows-Setup.exe` from the same Release and run it
 (or use the portable zip). Details in [desktop/README.md](desktop/README.md).
+On PC you also get an IDM-style **"Download this video" button** inside Chrome / Edge / Brave — in the app
+click **Browser button** to set it up.
 
 Every version ever built stays in **Releases** — the newest is marked *Latest* and is at the top;
 older ones (including the early test builds v0.1–v0.6) are below it.
@@ -41,6 +43,7 @@ downloaded by any downloader; use their own apps' offline download.
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each version
 - [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) — how the app works inside
 - [desktop/](desktop/) — the PC (Windows) version
+- [browser-extension/](browser-extension/) — the browser button for Chrome / Edge / Brave
 
 ## Build
 Every push to `main` builds the APKs and the Windows app with GitHub Actions and publishes one Release

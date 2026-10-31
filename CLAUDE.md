@@ -1,7 +1,8 @@
 # Notes for AI assistants working on this repo
 
 - This repo (`hemelsid/MediaDownloader`) is the single home of the Video Downloader app —
-  Android (`app/`) and PC/Windows (`desktop/`). Each Release contains both.
+  Android (`app/`), PC/Windows (`desktop/`) and the browser button extension (`browser-extension/`).
+  Each Release contains all of them.
   Commit and push every change here so the owner always has the latest code and APKs.
 - After each change: update `CHANGELOG.md` (and `docs/HOW-IT-WORKS.md` if behaviour changed),
   push to `main`, wait for the "Build APK" workflow, and give the owner the new Release files.

@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Video Downloader — download button",
+  "short_name": "Video Downloader",
+  "version": "1.0.0",
+  "description": "Shows a \"Download this video\" button on videos (YouTube, Facebook, Instagram and more) and sends them to the Video Downloader app on this PC.",
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "action": {
+    "default_title": "Video Downloader",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" }
+  },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["contextMenus", "storage", "activeTab"],
+  "host_permissions": ["http://127.0.0.1:47811/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}

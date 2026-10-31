@@ -32,6 +32,13 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 [Files]
 Source: "..\dist\VideoDownloader\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
+[Registry]
+; videodownloader:// links — lets the browser button open the app with a video when the app is closed
+Root: HKCU; Subkey: "Software\Classes\videodownloader"; ValueType: string; ValueName: ""; ValueData: "URL:Video Downloader"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\videodownloader"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\videodownloader\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\VideoDownloader.exe,0"
+Root: HKCU; Subkey: "Software\Classes\videodownloader\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\VideoDownloader.exe"" ""%1"""
+
 [Icons]
 Name: "{group}\Video Downloader"; Filename: "{app}\VideoDownloader.exe"
 Name: "{group}\Uninstall Video Downloader"; Filename: "{uninstallexe}"

@@ -4,6 +4,19 @@ Every push to `main` builds a new Release (`v1.<build number>`); all Releases ar
 Earlier test builds v1–v6 were made before this repo existed; they are in Releases as v0.1–v0.6
 (signed with different keys, so uninstall before installing one of them).
 
+## v1.6 — 2026-11-01
+- **New: IDM-style browser button** (Chrome, Edge, Brave). While a video plays on YouTube, Facebook,
+  Instagram or any site, an orange "Download this video" button appears on it; one click sends that
+  exact video to the PC app (its preview opens there). Right-click menu "Download with Video
+  Downloader" too. If the app is closed it opens automatically (`videodownloader://` link).
+  Setup: click **Browser button** in the app (1-minute guide).
+- PC: ✕ to clear the search box and ✕ to close the preview.
+- PC: site shortcuts in the header (YouTube, Facebook, Instagram, TikTok, X, Dailymotion, Vimeo) — open the
+  site in your browser, then use the button on the video.
+- PC: sharp app icon at every size (title bar, taskbar, installer).
+- PC: only one copy of the app runs; opening it again brings the window to the front.
+- Settings: choose what the browser button does — show qualities first, or download best quality at once.
+
 ## v1.5 — 2026-11-01
 - PC app redesigned for a more professional look (CustomTkinter): rounded controls, dark title bar,
   logo, download cards with thumbnails, progress bars and icon buttons, filters (All / Active /
