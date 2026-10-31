@@ -41,9 +41,11 @@ cookies. Then the default client and fallbacks (`tv_simply,web_safari,mweb`, `an
 are tried. If YouTube still blocks: switch Wi-Fi/mobile data or log in to YouTube in the browser.
 
 ## PC app (`desktop/`)
-- `video_downloader.py` — Tkinter window: search/paste box, copied-link bar, preview panel
-  (thumbnail, title, Video/Audio quality list with sizes, file name, playlist), downloads list,
-  Settings. Settings and history are stored in `%APPDATA%\VideoDownloader`.
+- `video_downloader.py` — CustomTkinter window (scales with Windows display scaling, dark title bar):
+  search/paste box, copied-link bar, preview panel (thumbnail, title, Video/Audio quality list with
+  sizes, file name, playlist) with a fixed Download button, download cards with filters, and a
+  Settings dialog (scrolling body, fixed Save bar). Window size adapts to the screen; long text is
+  shortened with "…" by measuring the real font. Settings and history live in `%APPDATA%\VideoDownloader`.
 - `engine.py` — runs the standalone `yt-dlp.exe` as a separate process (so it can self-update with
   `-U`), with `--ffmpeg-location bin` and `--js-runtimes deno:bin\deno.exe` (YouTube needs a JS
   runtime). Progress comes from a custom `--progress-template`, final paths from
