@@ -3,6 +3,7 @@ Video Downloader — PC version (Windows / macOS / Linux).
 
 Paste a link (or search YouTube), see a preview with every quality and its size, then download.
 Same engine as the phone app: yt-dlp + ffmpeg (+ Deno for YouTube), see engine.py.
+UI: CustomTkinter (scales with Windows display scaling, dark title bar).
 """
 from __future__ import annotations
 
@@ -15,22 +16,21 @@ import sys
 import threading
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 import urllib.request
 import uuid
 import webbrowser
 from dataclasses import dataclass, field
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
 
-try:
-    from PIL import Image, ImageDraw, ImageTk
-except ImportError:  # thumbnails are optional when running from source
-    Image = None
+import customtkinter as ctk
+from PIL import Image, ImageDraw
 
 import engine
 from engine import EngineError, MediaInfo, Quality
 
 APP = "Video Downloader"
-VERSION = os.environ.get("VD_VERSION", "dev")
+VERSION = "dev"
 try:
     from _version import VERSION  # written by the build
 except Exception:
@@ -38,17 +38,30 @@ except Exception:
 
 # ---------------------------------------------------------------- look
 
-BG = "#111111"
-CARD = "#1C1C1E"
-CARD2 = "#26262A"
-FG = "#F2F2F2"
-MUTED = "#A0A0A8"
+BG = "#0F0F10"
+PANEL = "#18181B"
+CARD = "#1F1F23"
+CARD_HOVER = "#26262B"
+LINE = "#2C2C32"
+FG = "#F4F4F5"
+MUTED = "#A1A1AA"
+DIM = "#71717A"
 ORANGE = "#FF6A13"
-ORANGE_D = "#E25A0B"
-GOOD = "#3DDC84"
-BAD = "#FF8A80"
-FONT = "Segoe UI" if sys.platform.startswith("win") else ("Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans")
+ORANGE_H = "#E85D0C"
+ORANGE_SOFT = "#3A1E0C"
+GOOD = "#34D399"
+BAD = "#F87171"
+WARN = "#FBBF24"
+IS_WIN = sys.platform.startswith("win")
+FAMILY = "Segoe UI" if IS_WIN else ("Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans")
+SYMBOLS = "Segoe UI Symbol" if IS_WIN else FAMILY
 
+
+def F(size=13, weight="normal", family=None):
+    return ctk.CTkFont(family=family or FAMILY, size=size, weight=weight)
+
+
+# ---------------------------------------------------------------- helpers
 
 def data_dir() -> str:
     base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), ".config")
@@ -63,12 +76,12 @@ def default_folder() -> str:
 
 def human_size(n: float) -> str:
     if not n or n <= 0:
-        return "—"
+        return ""
     for unit in ("B", "KB", "MB", "GB"):
         if n < 1024:
-            return f"{n:.0f} {unit}" if unit in ("B", "KB") else f"{n:.2f} {unit}"
+            return f"{n:.0f} {unit}" if unit in ("B", "KB") else f"{n:.1f} {unit}"
         n /= 1024
-    return f"{n:.2f} TB"
+    return f"{n:.1f} TB"
 
 
 def human_time(s: float) -> str:
@@ -87,16 +100,10 @@ def compact(n: int) -> str:
     return str(n)
 
 
-def text_bar(pct: float, width: int = 8) -> str:
-    pct = max(0.0, min(100.0, pct))
-    filled = int(width * pct / 100)
-    return "█" * filled + "░" * (width - filled) + f" {pct:.0f}%"
-
-
 def open_path(path: str):
     if not path or not os.path.exists(path):
         return
-    if sys.platform.startswith("win"):
+    if IS_WIN:
         os.startfile(path)  # noqa
     elif sys.platform == "darwin":
         subprocess.Popen(["open", path])
@@ -105,10 +112,70 @@ def open_path(path: str):
 
 
 def show_in_folder(path: str):
-    if sys.platform.startswith("win") and os.path.isfile(path):
+    if IS_WIN and os.path.isfile(path):
         subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
     else:
         open_path(os.path.dirname(path) if os.path.isfile(path) else path)
+
+
+def ellipsize(widget, text: str, max_px: int) -> str:
+    """Shortens text with … so it fits in max_px (real screen pixels) using the widget's own font."""
+    try:
+        inner = getattr(widget, "_label", None) or getattr(widget, "_text_label", None) or widget
+        f = tkfont.Font(font=inner.cget("font"))
+    except Exception:
+        return text
+    if max_px <= 20 or f.measure(text) <= max_px:
+        return text
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if f.measure(text[:mid] + "…") <= max_px:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo].rstrip() + "…"
+
+
+def make_icon(size=256):
+    """Orange rounded square with a white download arrow (same as the phone app)."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    s = size / 108
+    d.rounded_rectangle((4 * s, 4 * s, 104 * s, 104 * s), radius=24 * s, fill=(255, 106, 19, 255))
+    d.polygon([(49 * s, 26 * s), (59 * s, 26 * s), (59 * s, 52 * s), (70 * s, 52 * s), (54 * s, 70 * s),
+               (38 * s, 52 * s), (49 * s, 52 * s)], fill="white")
+    d.polygon([(30 * s, 68 * s), (37 * s, 68 * s), (37 * s, 76 * s), (71 * s, 76 * s), (71 * s, 68 * s),
+               (78 * s, 68 * s), (78 * s, 84 * s), (30 * s, 84 * s)], fill="white")
+    return img
+
+
+def rounded(img: Image.Image, radius: int) -> Image.Image:
+    img = img.convert("RGBA")
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, img.width - 1, img.height - 1), radius=radius, fill=255)
+    img.putalpha(mask)
+    return img
+
+
+def cover(img: Image.Image, w: int, h: int) -> Image.Image:
+    img = img.convert("RGB")
+    scale = max(w / img.width, h / img.height)
+    img = img.resize((max(w, int(img.width * scale + 0.5)), max(h, int(img.height * scale + 0.5))), Image.LANCZOS)
+    l, t = (img.width - w) // 2, (img.height - h) // 2
+    return img.crop((l, t, l + w, t + h))
+
+
+def placeholder(w, h, audio=False) -> Image.Image:
+    img = Image.new("RGB", (w, h), CARD_HOVER)
+    d = ImageDraw.Draw(img)
+    cx, cy, r = w // 2, h // 2, min(w, h) // 6
+    if audio:
+        d.ellipse((cx - r, cy, cx, cy + r), fill=(113, 113, 122))
+        d.rectangle((cx - 3, cy - 2 * r, cx, cy + r // 2), fill=(113, 113, 122))
+    else:
+        d.polygon([(cx - r // 2, cy - r), (cx - r // 2, cy + r), (cx + r, cy)], fill=(113, 113, 122))
+    return img
 
 
 # ---------------------------------------------------------------- state
@@ -122,7 +189,9 @@ class Item:
     playlist: bool = False
     name: str | None = None
     folder: str = ""
-    status: str = "Queued"          # Queued, Downloading, Processing, Done, Failed, Cancelled
+    thumb: str | None = None
+    duration: int = 0
+    status: str = "Queued"          # Queued, Starting, Downloading, Processing, Done, Failed, Cancelled
     pct: float = 0.0
     speed: float = 0.0
     eta: float = 0.0
@@ -140,111 +209,259 @@ class Item:
         q = self.quality
         return dict(id=self.id, url=self.url, title=self.title, status=self.status, files=self.files,
                     folder=self.folder, error=self.error, detail=self.detail, added=self.added, playlist=self.playlist,
-                    name=self.name, q=dict(label=q.label, size=q.size, height=q.height, audio=q.audio), total=self.total)
+                    name=self.name, thumb=self.thumb, duration=self.duration, total=self.total,
+                    q=dict(label=q.label, size=q.size, height=q.height, audio=q.audio))
 
     @staticmethod
     def from_json(d):
         q = d.get("q") or {}
         it = Item(d["id"], d["url"], d.get("title") or d["url"],
                   Quality(q.get("label", "Best quality"), q.get("size", 0), q.get("height"), q.get("audio")),
-                  d.get("playlist", False), d.get("name"), d.get("folder", ""), d.get("status", "Done"),
-                  files=d.get("files") or [], error=d.get("error", ""), detail=d.get("detail", ""),
-                  added=d.get("added", time.time()), total=d.get("total", 0))
+                  d.get("playlist", False), d.get("name"), d.get("folder", ""), d.get("thumb"), d.get("duration", 0),
+                  d.get("status", "Done"), files=d.get("files") or [], error=d.get("error", ""),
+                  detail=d.get("detail", ""), added=d.get("added", time.time()), total=d.get("total", 0))
         if it.active:  # app was closed mid-download
             it.status, it.error = "Failed", "Stopped when the app was closed — press Retry."
         return it
 
 
-# ---------------------------------------------------------------- widgets
+# ---------------------------------------------------------------- small widgets
 
-class Btn(tk.Label):
-    """Flat button that looks the same on every OS."""
+class Tooltip:
+    def __init__(self, widget, text):
+        self.widget, self.text, self.tip = widget, text, None
+        widget.bind("<Enter>", self.show, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
 
-    def __init__(self, master, text, command, kind="normal", **kw):
-        colors = {"primary": (ORANGE, "white", ORANGE_D), "normal": (CARD2, FG, "#33333A"),
-                  "ghost": (master["bg"], MUTED, CARD2)}[kind]
-        self._bg, self._hover = colors[0], colors[2]
-        super().__init__(master, text=text, bg=colors[0], fg=colors[1], cursor="hand2",
-                         font=kw.pop("font", (FONT, 10, "bold" if kind == "primary" else "normal")),
-                         padx=kw.pop("padx", 14), pady=kw.pop("pady", 7), **kw)
-        self._cmd = command
-        self._enabled = True
-        self.bind("<Button-1>", lambda e: self._enabled and self._cmd and self._cmd())
-        self.bind("<Enter>", lambda e: self._enabled and self.config(bg=self._hover))
-        self.bind("<Leave>", lambda e: self.config(bg=self._bg))
-
-    def enable(self, on: bool):
-        self._enabled = on
-        self.config(fg=("white" if self._bg == ORANGE else FG) if on else "#666670", cursor="hand2" if on else "arrow")
-
-
-class Scrollable(tk.Frame):
-    def __init__(self, master, **kw):
-        super().__init__(master, bg=kw.get("bg", CARD))
-        self.canvas = tk.Canvas(self, bg=kw.get("bg", CARD), highlightthickness=0, bd=0)
-        self.sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.inner = tk.Frame(self.canvas, bg=kw.get("bg", CARD))
-        self.inner.bind("<Configure>", lambda e: self._sync())
-        self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        self.canvas.bind("<Configure>", lambda e: (self.canvas.itemconfigure(self._win, width=e.width), self._sync()))
-        self.canvas.configure(yscrollcommand=self.sb.set)
-        self.canvas.pack(side="left", fill="both", expand=True)
-        for w in (self.canvas, self.inner):
-            w.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._wheel))
-            w.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
-
-    def _sync(self):
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        need = self.inner.winfo_reqheight() > self.canvas.winfo_height() + 2
-        if need and not self.sb.winfo_ismapped():
-            self.sb.pack(side="right", fill="y", before=self.canvas)
-        elif not need and self.sb.winfo_ismapped():
-            self.sb.pack_forget()
-
-    def _wheel(self, e):
-        if not self.sb.winfo_ismapped():
+    def show(self, _e=None):
+        if self.tip or not self.text:
             return
-        self.canvas.yview_scroll(int(-e.delta / 120) or (-1 if e.delta > 0 else 1), "units")
+        x = self.widget.winfo_rootx() + 10
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(self.tip, text=self.text, bg="#2E2E34", fg=FG, padx=8, pady=4, font=(FAMILY, 9)).pack()
 
-    def clear(self):
-        for c in self.inner.winfo_children():
+    def hide(self, _e=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
+
+def icon_button(master, symbol, tip, command, danger=False, width=36):
+    b = ctk.CTkButton(master, text=symbol, width=width, height=32, corner_radius=8, command=command,
+                      fg_color=CARD_HOVER, hover_color=("#5A1F1F" if danger else "#34343B"), text_color=FG,
+                      font=F(14, family=SYMBOLS))
+    Tooltip(b, tip)
+    return b
+
+
+def ghost_button(master, text, command, width=0, **kw):
+    return ctk.CTkButton(master, text=text, command=command, height=34, corner_radius=9, fg_color=CARD,
+                         hover_color=CARD_HOVER, text_color=FG, border_width=1, border_color=LINE, font=F(12),
+                         width=width or 0, **kw)
+
+
+def primary_button(master, text, command, height=40, size=14, **kw):
+    return ctk.CTkButton(master, text=text, command=command, height=height, corner_radius=10, fg_color=ORANGE,
+                         hover_color=ORANGE_H, text_color="white", font=F(size, "bold"), **kw)
+
+
+# ---------------------------------------------------------------- download card
+
+class DownloadCard(ctk.CTkFrame):
+    THUMB = (128, 72)
+
+    def __init__(self, master, app: "App", item: Item):
+        super().__init__(master, fg_color=CARD, corner_radius=12)
+        self.app, self.item = app, item
+        self.grid_columnconfigure(1, weight=1)
+        self.thumb = ctk.CTkLabel(self, text="", width=self.THUMB[0], height=self.THUMB[1])
+        self.thumb.grid(row=0, column=0, rowspan=3, padx=(12, 14), pady=12)
+        self.title = ctk.CTkLabel(self, text=item.title, font=F(13, "bold"), anchor="w", text_color=FG)
+        self.title.grid(row=0, column=1, sticky="ew", pady=(12, 0))
+        self.info = ctk.CTkLabel(self, text="", font=F(12), anchor="w", text_color=MUTED)
+        self.info.grid(row=1, column=1, sticky="ew")
+        self.bar = ctk.CTkProgressBar(self, height=6, corner_radius=3, progress_color=ORANGE, fg_color=LINE)
+        self.bar.grid(row=2, column=1, sticky="ew", pady=(4, 12))
+        self.btns = ctk.CTkFrame(self, fg_color="transparent")
+        self.btns.grid(row=0, column=2, rowspan=3, padx=(10, 12))
+        self._btn_state = None
+        self._title_w = 0
+        self.bind("<Configure>", lambda e: self.after_idle(self._fit_title))
+        for w in (self, self.thumb, self.title, self.info):
+            w.bind("<Double-Button-1>", lambda e: self.app.play(self.item))
+        self._set_thumb_placeholder()
+        if item.thumb:
+            app.thumbs.get(item.thumb, self.THUMB, self._set_thumb)
+        self.update_view()
+
+    def _set_thumb_placeholder(self):
+        img = rounded(placeholder(*[v * 2 for v in self.THUMB], audio=self.item.quality.is_audio), 16)
+        self.thumb.configure(image=ctk.CTkImage(img, size=self.THUMB))
+
+    def _set_thumb(self, img):
+        if self.winfo_exists():
+            self.thumb.configure(image=ctk.CTkImage(rounded(img, 16), size=self.THUMB))
+
+    def _fit_title(self):
+        if not self.winfo_exists():
+            return
+        w = self.title.winfo_width()
+        if w > 30:
+            self.title.configure(text=ellipsize(self.title, self.item.title, w - 8))
+            info_txt = getattr(self, "_info_full", "")
+            self.info.configure(text=ellipsize(self.info, info_txt, self.info.winfo_width() - 8))
+
+    def update_view(self):
+        it = self.item
+        q = it.quality.label.replace(" Video", "").replace("Ultra HD", "UHD")
+        color = MUTED
+        if it.status == "Downloading":
+            parts = [f"{it.pct:.0f}%", q, human_size(it.total),
+                     (human_size(it.speed) + "/s") if it.speed else "", (human_time(it.eta) + " left") if it.eta else ""]
+            self.bar.set(it.pct / 100)
+            color = FG
+        elif it.status == "Processing":
+            parts = ["Converting…", q]
+            self.bar.set(1)
+        elif it.status in ("Queued", "Starting"):
+            parts = ["Waiting…" if it.status == "Queued" else "Starting…", q]
+            self.bar.set(0)
+        elif it.status == "Done":
+            parts = ["✓ Completed", q, human_size(it.total)]
+            self.bar.set(1)
+            color = GOOD
+        elif it.status == "Failed":
+            parts = ["Failed — " + (it.error or "unknown error")]
+            self.bar.set(0)
+            color = BAD
+        else:
+            parts = ["Cancelled", q]
+            self.bar.set(0)
+            color = DIM
+        self._info_full = "   •   ".join(p for p in parts if p)
+        self.info.configure(text_color=color)
+        if it.active:
+            self.bar.grid()
+        else:
+            self.bar.grid_remove()
+        self._fit_title()
+        self._buttons()
+
+    def _buttons(self):
+        st = "active" if self.item.active else self.item.status
+        if st == self._btn_state:
+            return
+        self._btn_state = st
+        for c in self.btns.winfo_children():
             c.destroy()
-        self.canvas.yview_moveto(0)
+        a, it = self.app, self.item
+        bs = []
+        if it.active:
+            bs.append(("⏹", "Cancel", lambda: a.cancel(it), True))
+        elif it.status == "Done":
+            bs += [("▶", "Play", lambda: a.play(it), False), ("📁", "Show in folder", lambda: a.show(it), False)]
+        else:
+            if it.status == "Failed" and it.detail:
+                bs.append(("ⓘ", "Error details", lambda: a.details(it), False))
+            bs.append(("⟳", "Retry", lambda: a.retry(it), False))
+        bs.append(("✕", "Remove from list", lambda: a.remove(it), True))
+        for i, (sym, tip, fn, danger) in enumerate(bs):
+            icon_button(self.btns, sym, tip, fn, danger).grid(row=0, column=i, padx=3)
+
+
+# ---------------------------------------------------------------- thumbnails
+
+class Thumbs:
+    """Downloads thumbnails in the background and caches them."""
+
+    def __init__(self, ui_q):
+        self.ui_q = ui_q
+        self.cache: dict[str, Image.Image] = {}
+
+    def get(self, url, size, callback):
+        if url in self.cache:
+            callback(cover(self.cache[url], size[0] * 2, size[1] * 2))
+            return
+
+        def work():
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                img = Image.open(io.BytesIO(urllib.request.urlopen(req, timeout=15).read()))
+                img.load()
+                self.cache[url] = img
+                self.ui_q.put(("call", lambda: callback(cover(img, size[0] * 2, size[1] * 2))))
+            except Exception:
+                pass
+        threading.Thread(target=work, daemon=True).start()
 
 
 # ---------------------------------------------------------------- app
 
 class App:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: ctk.CTk):
         self.root = root
         self.ui_q: queue.Queue = queue.Queue()
+        self.thumbs = Thumbs(self.ui_q)
         self.settings = self._load_settings()
         self.engine = engine.Engine(self.settings)
         self.items: list[Item] = self._load_history()
+        self.cards: dict[str, DownloadCard] = {}
         self.running = 0
         self.info: MediaInfo | None = None
         self.info_url = ""
         self.req_id = 0
         self.quality_var = tk.IntVar(value=0)
-        self.tab = "video"
+        self.tab = "Video"
+        self.filter = "All"
         self.last_clip = ""
-        self._thumb_ref = None
-        self._thumb_cache: dict[str, bytes] = {}
+        self._clip_url = ""
+        self._dirty: set[str] = set()
 
         root.title(APP)
-        root.geometry("1200x760")
-        root.minsize(980, 640)
-        root.configure(bg=BG)
+        root.configure(fg_color=BG)
         self._set_icon()
-        self._style()
+        self._place_window()
         self._build()
-        self._refresh_list()
+        self._render_list()
 
         root.after(100, self._pump)
         root.after(500, self._dispatch)
-        root.after(1200, self._watch_clipboard)
+        root.after(1500, self._watch_clipboard)
         threading.Thread(target=self._startup_checks, daemon=True).start()
         root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ------------------------------------------------ window
+    def _set_icon(self):
+        try:
+            ico = os.path.join(engine.app_dir(), "icon.ico")
+            if IS_WIN and os.path.isfile(ico):
+                self.root.iconbitmap(ico)
+            else:
+                from PIL import ImageTk
+                self._icon = ImageTk.PhotoImage(make_icon(64))
+                self.root.iconphoto(True, self._icon)
+        except Exception:
+            pass
+
+    def _place_window(self):
+        """Fit the window to the screen (in scaled units); small or high-scaling screens start maximized."""
+        scale = ctk.ScalingTracker.get_window_scaling(self.root)
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        lw, lh = sw / scale, sh / scale                      # screen size in app units
+        self.compact = lw < 1320
+        self.pw = 340 if self.compact else 400              # preview column width
+        self.short = lh < 820                               # low screen: small thumbnail beside the title
+        self.root.minsize(int(min(900, lw * 0.9)), int(min(600, lh * 0.82)))
+        w, h = 1280, 800
+        if w > lw * 0.94 or h > lh * 0.88:
+            self.root.geometry(f"{int(lw * 0.94)}x{int(lh * 0.86)}+10+10")
+            if IS_WIN:
+                self.root.after(80, lambda: self.root.state("zoomed"))
+        else:
+            self.root.geometry(f"{w}x{h}+{int((sw - w * scale) / 2)}+{int((sh - h * scale) / 3)}")
 
     # ------------------------------------------------ persistence
     def _load_settings(self) -> dict:
@@ -280,354 +497,343 @@ class App:
         except Exception:
             pass
 
-    # ------------------------------------------------ look
-    def _set_icon(self):
-        if Image is None:
-            return
-        try:
-            png = os.path.join(engine.app_dir(), "icon.png")
-            if os.path.isfile(png):
-                img = Image.open(png)
-            else:
-                img = make_icon(256)
-            self._icon = ImageTk.PhotoImage(img.resize((64, 64)))
-            self.root.iconphoto(True, self._icon)
-        except Exception:
-            pass
-
-    def _style(self):
-        st = ttk.Style()
-        try:
-            st.theme_use("clam")
-        except tk.TclError:
-            pass
-        st.configure(".", background=BG, foreground=FG, fieldbackground=CARD2, font=(FONT, 10))
-        st.configure("Treeview", background=CARD, fieldbackground=CARD, foreground=FG, rowheight=30, borderwidth=0,
-                     bordercolor=CARD, lightcolor=CARD, darkcolor=CARD)
-        st.layout("Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
-        st.configure("Treeview.Heading", background=CARD2, foreground=MUTED, relief="flat", font=(FONT, 9, "bold"))
-        st.map("Treeview", background=[("selected", "#3A1E0C")], foreground=[("selected", FG)])
-        st.map("Treeview.Heading", background=[("active", CARD2)])
-        st.configure("Vertical.TScrollbar", background=CARD2, troughcolor=CARD, bordercolor=CARD, arrowcolor=MUTED,
-                     darkcolor=CARD2, lightcolor=CARD2, gripcount=0, arrowsize=12)
-        st.map("Vertical.TScrollbar", background=[("active", "#3A3A40")])
-        st.configure("TCheckbutton", background=CARD, foreground=FG, indicatorbackground=CARD2, indicatorforeground=ORANGE)
-        st.map("TCheckbutton", background=[("active", CARD)])
-        st.configure("TCombobox", fieldbackground=CARD2, background=CARD2, foreground=FG, arrowcolor=FG,
-                     bordercolor=CARD2, lightcolor=CARD2, darkcolor=CARD2, selectbackground=CARD2, selectforeground=FG)
-        st.map("TCombobox", fieldbackground=[("readonly", CARD2)], foreground=[("readonly", FG)],
-               background=[("readonly", CARD2)])
-        st.configure("TSpinbox", fieldbackground=CARD2, background=CARD2, foreground=FG, arrowcolor=FG,
-                     bordercolor=CARD2, lightcolor=CARD2, darkcolor=CARD2)
-        self.root.option_add("*TCombobox*Listbox.background", CARD2)
-        self.root.option_add("*TCombobox*Listbox.foreground", FG)
-
     # ------------------------------------------------ layout
     def _build(self):
         r = self.root
+        r.grid_columnconfigure(0, weight=1)
+        r.grid_rowconfigure(3, weight=1)
+
         # header
-        top = tk.Frame(r, bg=BG)
-        top.pack(fill="x", padx=22, pady=(16, 8))
-        tk.Label(top, text=APP, bg=BG, fg=FG, font=(FONT, 20, "bold")).pack(side="left")
-        Btn(top, "⚙  Settings", self.open_settings, "normal").pack(side="right")
-        Btn(top, "📁  Open folder", lambda: (os.makedirs(self.settings["folder"], exist_ok=True),
-                                             open_path(self.settings["folder"])), "normal").pack(side="right", padx=8)
+        head = ctk.CTkFrame(r, fg_color="transparent")
+        head.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 6))
+        head.grid_columnconfigure(1, weight=1)
+        logo = ctk.CTkLabel(head, text="", image=ctk.CTkImage(make_icon(96), size=(34, 34)))
+        logo.grid(row=0, column=0, padx=(0, 12))
+        ctk.CTkLabel(head, text=APP, font=F(22, "bold"), text_color=FG).grid(row=0, column=1, sticky="w")
+        ghost_button(head, "  Open folder", self.open_folder).grid(row=0, column=2, padx=6)
+        ghost_button(head, "  Settings", self.open_settings).grid(row=0, column=3)
 
-        # search box
-        sb = tk.Frame(r, bg=BG)
-        sb.pack(fill="x", padx=22, pady=(4, 6))
-        box = tk.Frame(sb, bg="white", highlightthickness=2, highlightbackground=ORANGE, highlightcolor=ORANGE)
-        box.pack(side="left", fill="x", expand=True)
-        self.entry = tk.Entry(box, bd=0, font=(FONT, 13), bg="white", fg="#111", insertbackground="#111", relief="flat",
-                              highlightthickness=0)
-        self.entry.pack(side="left", fill="x", expand=True, padx=14, pady=10)
-        self.placeholder = "Paste a video link, or type to search YouTube…"
-        self._placeholder(True)
-        self.entry.bind("<FocusIn>", lambda e: self._placeholder(False))
-        self.entry.bind("<FocusOut>", lambda e: self._placeholder(not self.entry.get().strip()))
+        # search
+        sb = ctk.CTkFrame(r, fg_color="transparent")
+        sb.grid(row=1, column=0, sticky="ew", padx=24, pady=(8, 6))
+        sb.grid_columnconfigure(0, weight=1)
+        self.entry = ctk.CTkEntry(sb, height=48, corner_radius=12, border_width=2, border_color=LINE,
+                                  fg_color=PANEL, text_color=FG, font=F(14),
+                                  placeholder_text="Paste a video link, or type to search YouTube…",
+                                  placeholder_text_color=DIM)
+        self.entry.grid(row=0, column=0, sticky="ew")
         self.entry.bind("<Return>", lambda e: self.go())
-        tk.Label(box, text="📋 Paste", bg="white", fg="#555", cursor="hand2", font=(FONT, 10)).pack(side="left", padx=6)
-        box.winfo_children()[-1].bind("<Button-1>", lambda e: self.paste_and_go())
-        Btn(sb, "  Find  ▶  ", self.go, "primary", font=(FONT, 12, "bold"), pady=12).pack(side="left", padx=(10, 0))
+        self.entry.bind("<FocusIn>", lambda e: self.entry.configure(border_color=ORANGE))
+        self.entry.bind("<FocusOut>", lambda e: self.entry.configure(border_color=LINE))
+        ghost_button(sb, "Paste", self.paste_and_go, width=86, ).grid(row=0, column=1, padx=(10, 0))
+        primary_button(sb, "Find", self.go, height=48, size=15, width=120).grid(row=0, column=2, padx=(10, 0))
 
-        # copied-link banner
-        self.banner = tk.Frame(r, bg=CARD2)
-        self.banner_lbl = tk.Label(self.banner, bg=CARD2, fg=FG, font=(FONT, 10), anchor="w")
-        self.banner_lbl.pack(side="left", fill="x", expand=True, padx=12, pady=8)
-        Btn(self.banner, "Dismiss", lambda: self.banner.pack_forget(), "ghost").pack(side="right", padx=4)
-        Btn(self.banner, "⬇  Download", self._banner_go, "primary").pack(side="right", padx=4, pady=4)
+        # copied-link banner (row 2, hidden until needed)
+        self.banner = ctk.CTkFrame(r, fg_color=ORANGE_SOFT, corner_radius=10)
+        self.banner.grid_columnconfigure(0, weight=1)
+        self.banner_lbl = ctk.CTkLabel(self.banner, text="", font=F(12), text_color=FG, anchor="w")
+        self.banner_lbl.grid(row=0, column=0, sticky="ew", padx=14, pady=8)
+        ctk.CTkButton(self.banner, text="Dismiss", width=80, height=30, fg_color="transparent", hover_color=CARD,
+                      text_color=MUTED, command=lambda: self.banner.grid_remove(), font=F(12)).grid(row=0, column=1)
+        primary_button(self.banner, "Get this video", self._banner_go, height=30, size=12, width=130).grid(
+            row=0, column=2, padx=(6, 10), pady=6)
 
         # body
-        self.body = tk.Frame(r, bg=BG)
-        self.body.pack(fill="both", expand=True, padx=22, pady=(6, 8))
-        self.left = tk.Frame(self.body, bg=CARD, width=440)
-        self.left.pack(side="left", fill="y")
-        self.left.pack_propagate(False)
-        right = tk.Frame(self.body, bg=BG)
-        right.pack(side="left", fill="both", expand=True, padx=(16, 0))
-        self.preview = Scrollable(self.left, bg=CARD)
-        self.preview.pack(fill="both", expand=True, padx=2, pady=2)
+        body = ctk.CTkFrame(r, fg_color="transparent")
+        body.grid(row=3, column=0, sticky="nsew", padx=24, pady=(8, 10))
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=1)
+
+        left = ctk.CTkFrame(body, fg_color=PANEL, corner_radius=14, width=self.pw + 24)
+        left.grid(row=0, column=0, sticky="ns", padx=(0, 18))
+        left.grid_rowconfigure(0, weight=1)
+        left.grid_columnconfigure(0, weight=1)
+        self.preview = ctk.CTkScrollableFrame(left, width=self.pw, fg_color=PANEL, corner_radius=14,
+                                              scrollbar_button_color=LINE, scrollbar_button_hover_color=DIM)
+        self.preview.grid(row=0, column=0, sticky="nsew", padx=4, pady=(4, 0))
+        self.preview.grid_columnconfigure(0, weight=1)
+        # Download button lives outside the scroll area so it is always visible
+        self.action = ctk.CTkFrame(left, fg_color=PANEL, corner_radius=14)
+        self.action.grid_columnconfigure(0, weight=1)
+        self.dl_btn = primary_button(self.action, "Download", self.start_download, height=48, size=16)
+        self.dl_btn.grid(row=0, column=0, sticky="ew", padx=16, pady=(8, 16))
         self._show_welcome()
 
-        # downloads
-        hdr = tk.Frame(right, bg=BG)
-        hdr.pack(fill="x")
-        tk.Label(hdr, text="Downloads", bg=BG, fg=FG, font=(FONT, 15, "bold")).pack(side="left")
-        for txt, fn in (("Clear finished", self.clear_finished), ("Remove", self.remove_sel), ("Retry", self.retry_sel),
-                        ("Cancel", self.cancel_sel), ("Show in folder", self.show_sel), ("Play", self.open_sel)):
-            Btn(hdr, txt, fn, "normal", padx=10, pady=5).pack(side="right", padx=3)
-        wrap = tk.Frame(right, bg=CARD)
-        wrap.pack(fill="both", expand=True, pady=(8, 0))
-        cols = ("title", "quality", "status", "progress", "size", "speed")
-        self.tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="extended")
-        for c, t, w, st in (("title", "Title", 170, True), ("quality", "Quality", 88, False), ("status", "Status", 86, False),
-                            ("progress", "Progress", 140, False), ("size", "Size", 74, False),
-                            ("speed", "Speed • left", 120, False)):
-            self.tree.heading(c, text=t)
-            self.tree.column(c, width=w, minwidth=40, stretch=st, anchor="w" if c == "title" else "center")
-        vsb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=vsb.set)
-        self.tree.pack(side="left", fill="both", expand=True)
-        vsb.pack(side="right", fill="y")
-        self.tree.tag_configure("done", foreground=GOOD)
-        self.tree.tag_configure("fail", foreground=BAD)
-        self.tree.tag_configure("dim", foreground=MUTED)
-        self.tree.bind("<Double-1>", lambda e: self.open_sel())
-        self.tree.bind("<<TreeviewSelect>>", lambda e: self._show_error_of_sel())
-        self.menu = tk.Menu(r, tearoff=0, bg=CARD2, fg=FG, activebackground=ORANGE, activeforeground="white", bd=0)
-        for txt, fn in (("Play / open", self.open_sel), ("Show in folder", self.show_sel), ("Copy link", self.copy_sel),
-                        ("Open source page", self.source_sel), (None, None), ("Cancel", self.cancel_sel),
-                        ("Retry", self.retry_sel), ("Remove from list", self.remove_sel)):
-            self.menu.add_separator() if txt is None else self.menu.add_command(label=txt, command=fn)
-        self.tree.bind("<Button-3>", self._popup)
-        self.tree.bind("<Button-2>", self._popup)
-        self.err_lbl = tk.Label(right, bg=BG, fg=BAD, font=(FONT, 9), anchor="w", justify="left", wraplength=640)
-        self.err_lbl.pack(fill="x", pady=(6, 0))
+        right = ctk.CTkFrame(body, fg_color="transparent")
+        right.grid(row=0, column=1, sticky="nsew")
+        right.grid_rowconfigure(1, weight=1)
+        right.grid_columnconfigure(0, weight=1)
+        rh = ctk.CTkFrame(right, fg_color="transparent")
+        rh.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        rh.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(rh, text="Downloads", font=F(18, "bold"), text_color=FG).grid(row=0, column=0, sticky="w")
+        self.filter_btn = ctk.CTkSegmentedButton(
+            rh, values=["All", "Active", "Done", "Failed"], command=self._set_filter, font=F(12), height=32,
+            selected_color=ORANGE, selected_hover_color=ORANGE_H, unselected_color=CARD, unselected_hover_color=CARD_HOVER,
+            fg_color=CARD, text_color=FG)
+        self.filter_btn.set("All")
+        self.filter_btn.grid(row=0, column=2, padx=8)
+        ghost_button(rh, "Clear finished", self.clear_finished).grid(row=0, column=3)
+
+        self.list = ctk.CTkScrollableFrame(right, fg_color="transparent", scrollbar_button_color=LINE,
+                                           scrollbar_button_hover_color=DIM)
+        self.list.grid(row=1, column=0, sticky="nsew")
+        self.list.grid_columnconfigure(0, weight=1)
+        self.empty = ctk.CTkLabel(self.list, text="", font=F(13), text_color=DIM, justify="center")
 
         # status bar
-        self.status = tk.Label(r, bg=CARD, fg=MUTED, anchor="w", font=(FONT, 9), padx=14, pady=5)
-        self.status.pack(fill="x", side="bottom")
+        bar = ctk.CTkFrame(r, fg_color=PANEL, corner_radius=0, height=30)
+        bar.grid(row=4, column=0, sticky="ew")
+        bar.grid_columnconfigure(0, weight=1)
+        self.status = ctk.CTkLabel(bar, text="", font=F(11), text_color=MUTED, anchor="w")
+        self.status.grid(row=0, column=0, sticky="ew", padx=16, pady=4)
+        self.status_right = ctk.CTkLabel(bar, text="", font=F(11), text_color=DIM, anchor="e")
+        self.status_right.grid(row=0, column=1, sticky="e", padx=16)
+        self.status.bind("<Configure>", lambda e: self._fit_status())
+        self._status_text = ""
         self._set_status("Starting engine…")
 
-    def _placeholder(self, on: bool):
-        if on and not self.entry.get():
-            self.entry.insert(0, self.placeholder)
-            self.entry.config(fg="#888")
-        elif not on and self.entry.get() == self.placeholder:
-            self.entry.delete(0, "end")
-            self.entry.config(fg="#111")
-
     def _set_status(self, msg: str):
-        self.status.config(text=f"{msg}   •   Saving to: {self.settings['folder']}   •   App {VERSION}")
+        self._status_text = msg
+        folder = self.settings["folder"]
+        if len(folder) > 48:
+            folder = "…" + folder[-46:]
+        self.status_right.configure(text=f"Saving to {folder}   •   v{VERSION}")
+        self._fit_status()
+
+    def _fit_status(self):
+        self.status.configure(text=ellipsize(self.status, self._status_text, self.status.winfo_width() - 10))
 
     # ------------------------------------------------ preview panel
-    def _card_title(self, text):
-        tk.Label(self.preview.inner, text=text, bg=CARD, fg=FG, font=(FONT, 14, "bold"), anchor="w").pack(
-            fill="x", padx=18, pady=(18, 6))
+    def _clear_preview(self):
+        self.action.grid_remove()
+        for c in self.preview.winfo_children():
+            c.destroy()
+        try:
+            self.preview._parent_canvas.yview_moveto(0)
+        except Exception:
+            pass
+
+    def _section_title(self, text, row):
+        ctk.CTkLabel(self.preview, text=text, font=F(17, "bold"), text_color=FG, anchor="w").grid(
+            row=row, column=0, sticky="ew", padx=18, pady=(18, 8))
 
     def _show_welcome(self):
-        self.preview.clear()
-        p = self.preview.inner
-        self._card_title("How to download")
-        for n, t in (("1", "Copy a video link (YouTube, Facebook, Instagram, TikTok, X, Vimeo… almost any site)."),
-                     ("2", "Paste it above and press Find — or just copy it: the app notices copied links."),
-                     ("3", "Pick a quality (sizes are shown) and press Download."),
-                     ("★", "No link? Type words above to search YouTube.")):
-            row = tk.Frame(p, bg=CARD)
-            row.pack(fill="x", padx=18, pady=6)
-            tk.Label(row, text=n, bg="#3A1E0C", fg=ORANGE, font=(FONT, 10, "bold"), width=2).pack(side="left", anchor="n")
-            tk.Label(row, text=t, bg=CARD, fg="#D0D0D5", font=(FONT, 10), wraplength=340, justify="left", anchor="w").pack(
-                side="left", padx=10, fill="x")
-        tk.Label(p, text="Netflix, Prime Video, Hotstar and other DRM services can't be downloaded by any downloader.",
-                 bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=380, justify="left").pack(fill="x", padx=18, pady=(20, 10))
+        self._clear_preview()
+        self._section_title("How to download", 0)
+        steps = (("1", "Copy a video link from YouTube, Facebook, Instagram, TikTok, X, Vimeo — almost any site."),
+                 ("2", "Paste it above and press Find. Copied links are also noticed automatically."),
+                 ("3", "Pick Video or Audio and a quality (sizes are shown), then Download."),
+                 ("★", "No link? Type a few words above to search YouTube."))
+        for i, (n, t) in enumerate(steps, start=1):
+            row = ctk.CTkFrame(self.preview, fg_color="transparent")
+            row.grid(row=i, column=0, sticky="ew", padx=18, pady=6)
+            row.grid_columnconfigure(1, weight=1)
+            ctk.CTkLabel(row, text=n, width=26, height=26, corner_radius=13, fg_color=ORANGE_SOFT, text_color=ORANGE,
+                         font=F(12, "bold")).grid(row=0, column=0, sticky="n")
+            ctk.CTkLabel(row, text=t, font=F(13), text_color="#D4D4D8", wraplength=self.pw - 80, justify="left", anchor="w").grid(
+                row=0, column=1, sticky="w", padx=(12, 0))
+        ctk.CTkLabel(self.preview, text="Netflix, Prime Video, Hotstar and other DRM services can't be downloaded by "
+                                        "any downloader.", font=F(11), text_color=DIM, wraplength=self.pw - 40, justify="left",
+                     anchor="w").grid(row=9, column=0, sticky="ew", padx=18, pady=(22, 18))
 
     def _show_loading(self, text="Finding video…"):
-        self.preview.clear()
-        p = self.preview.inner
-        tk.Label(p, text="⏳", bg=CARD, fg=ORANGE, font=(FONT, 34)).pack(pady=(80, 6))
-        tk.Label(p, text=text, bg=CARD, fg=FG, font=(FONT, 12)).pack()
-        tk.Label(p, text=engine.host_of(self.info_url) or "", bg=CARD, fg=MUTED, font=(FONT, 9)).pack()
+        self._clear_preview()
+        ctk.CTkLabel(self.preview, text="", height=90).grid(row=0, column=0)
+        bar = ctk.CTkProgressBar(self.preview, mode="indeterminate", progress_color=ORANGE, fg_color=LINE, width=220)
+        bar.grid(row=1, column=0, pady=10)
+        bar.start()
+        ctk.CTkLabel(self.preview, text=text, font=F(15, "bold"), text_color=FG).grid(row=2, column=0, pady=(8, 2))
+        ctk.CTkLabel(self.preview, text=engine.host_of(self.info_url), font=F(12), text_color=DIM).grid(row=3, column=0)
 
     def _show_error(self, e: EngineError, url: str):
-        self.preview.clear()
-        p = self.preview.inner
-        tk.Label(p, text="🔒" if e.drm else "⚠", bg=CARD, fg="#FFB627" if e.drm else BAD, font=(FONT, 30)).pack(pady=(50, 6))
-        tk.Label(p, text=e.friendly, bg=CARD, fg=FG, font=(FONT, 11), wraplength=380, justify="left").pack(padx=18, fill="x")
+        self._clear_preview()
+        ctk.CTkLabel(self.preview, text="🔒" if e.drm else "⚠", font=F(40, family=SYMBOLS),
+                     text_color=WARN if e.drm else BAD).grid(row=0, column=0, pady=(60, 8))
+        ctk.CTkLabel(self.preview, text=e.friendly, font=F(14), text_color=FG, wraplength=self.pw - 50, justify="left").grid(
+            row=1, column=0, sticky="ew", padx=22)
         if not e.drm:
-            det = tk.Label(p, text="", bg=CARD2, fg=MUTED, font=(FONT, 9), wraplength=380, justify="left", anchor="w")
+            det = ctk.CTkTextbox(self.preview, height=110, fg_color=CARD, text_color=MUTED, font=F(11), wrap="word")
+            det.insert("1.0", e.detail or "")
+            det.configure(state="disabled")
+            shown = {"v": False}
+
             def toggle():
-                if det.winfo_ismapped():
-                    det.pack_forget()
+                if shown["v"]:
+                    det.grid_remove()
                 else:
-                    det.config(text=e.detail)
-                    det.pack(fill="x", padx=18, pady=6, after=link)
-            link = tk.Label(p, text="Details ▾", bg=CARD, fg=ORANGE, cursor="hand2", font=(FONT, 10))
-            link.pack(anchor="w", padx=18, pady=(10, 0))
-            link.bind("<Button-1>", lambda ev: toggle())
-            row = tk.Frame(p, bg=CARD)
-            row.pack(anchor="w", padx=18, pady=14)
-            Btn(row, "Try again", lambda: self.load(url), "primary").pack(side="left")
+                    det.grid(row=3, column=0, sticky="ew", padx=22, pady=6)
+                shown["v"] = not shown["v"]
+            ctk.CTkButton(self.preview, text="Show details", command=toggle, fg_color="transparent", hover_color=CARD,
+                          text_color=ORANGE, font=F(12), width=100, anchor="w").grid(row=2, column=0, sticky="w", padx=16,
+                                                                                    pady=(12, 0))
+            row = ctk.CTkFrame(self.preview, fg_color="transparent")
+            row.grid(row=4, column=0, sticky="w", padx=22, pady=14)
+            primary_button(row, "Try again", lambda: self.load(url), height=36, size=13, width=120).grid(row=0, column=0)
             if e.login_site:
-                Btn(row, "Settings", self.open_settings, "normal").pack(side="left", padx=8)
+                ghost_button(row, "Settings", self.open_settings, width=100).grid(row=0, column=1, padx=8)
 
     def _show_results(self, results: list[engine.SearchResult], query: str):
-        self.preview.clear()
-        p = self.preview.inner
-        self._card_title(f"Results for “{query[:40]}”")
+        self._clear_preview()
+        self._section_title(f"Results for “{query[:36]}”", 0)
         if not results:
-            tk.Label(p, text="Nothing found.", bg=CARD, fg=MUTED).pack(padx=18, anchor="w")
-        for res in results:
-            row = tk.Frame(p, bg=CARD, cursor="hand2")
-            row.pack(fill="x", padx=12, pady=3)
-            thumb = tk.Label(row, bg=CARD2, width=16, height=5)
-            thumb.pack(side="left", padx=(6, 10), pady=4)
-            col = tk.Frame(row, bg=CARD)
-            col.pack(side="left", fill="x", expand=True)
-            t = tk.Label(col, text=res.title, bg=CARD, fg=FG, font=(FONT, 10, "bold"), wraplength=240, justify="left", anchor="w")
-            t.pack(fill="x")
-            meta = " • ".join(x for x in (res.channel, human_time(res.duration)) if x)
-            m = tk.Label(col, text=meta, bg=CARD, fg=MUTED, font=(FONT, 9), anchor="w")
-            m.pack(fill="x")
-            for w in (row, thumb, col, t, m):
+            ctk.CTkLabel(self.preview, text="Nothing found.", text_color=DIM, font=F(13)).grid(row=1, column=0, padx=18,
+                                                                                              sticky="w")
+        size = (112, 63)
+        for i, res in enumerate(results, start=1):
+            row = ctk.CTkFrame(self.preview, fg_color=CARD, corner_radius=10, cursor="hand2")
+            row.grid(row=i, column=0, sticky="ew", padx=12, pady=4)
+            row.grid_columnconfigure(1, weight=1)
+            th = ctk.CTkLabel(row, text="", width=size[0], height=size[1],
+                              image=ctk.CTkImage(rounded(placeholder(size[0] * 2, size[1] * 2), 12), size=size))
+            th.grid(row=0, column=0, rowspan=2, padx=8, pady=8)
+            t = ctk.CTkLabel(row, text=res.title, font=F(12, "bold"), text_color=FG, wraplength=self.pw - 170, justify="left",
+                             anchor="w")
+            t.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(8, 0))
+            m = ctk.CTkLabel(row, text=" • ".join(x for x in (res.channel, human_time(res.duration)) if x), font=F(11),
+                             text_color=DIM, anchor="w")
+            m.grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 8))
+            for w in (row, th, t, m):
                 w.bind("<Button-1>", lambda e, u=res.url: self.load(u))
-                w.bind("<Enter>", lambda e, rw=row: [c.config(bg=CARD2) for c in [rw] + rw.winfo_children()])
-                w.bind("<Leave>", lambda e, rw=row: [c.config(bg=CARD) for c in [rw] + rw.winfo_children()])
+            row.bind("<Enter>", lambda e, rw=row: rw.configure(fg_color=CARD_HOVER))
+            row.bind("<Leave>", lambda e, rw=row: rw.configure(fg_color=CARD))
             if res.thumbnail:
-                self._load_thumb(res.thumbnail, (128, 72), thumb)
+                self.thumbs.get(res.thumbnail, size,
+                                lambda img, lb=th: lb.winfo_exists() and lb.configure(
+                                    image=ctk.CTkImage(rounded(img, 12), size=size)))
 
     def _show_info(self, info: MediaInfo):
         self.info = info
-        self.preview.clear()
-        p = self.preview.inner
-        self.thumb_lbl = tk.Label(p, bg=CARD2, width=400, height=225, cursor="hand2")
-        self.thumb_lbl.pack(padx=18, pady=(18, 10))
+        self._clear_preview()
+        p = self.preview
+        if self.short:
+            size = (144, 81)
+            head = ctk.CTkFrame(p, fg_color="transparent")
+            head.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 4))
+            head.grid_columnconfigure(1, weight=1)
+            thumb_parent, text_parent, wrap = head, head, self.pw - size[0] - 50
+        else:
+            tw = self.pw - 28
+            size = (tw, int(tw * 9 / 16))
+            thumb_parent, text_parent, wrap = p, p, self.pw - 40
+        radius = 14 if self.short else 24
+        self.thumb_lbl = ctk.CTkLabel(thumb_parent, text="", width=size[0], height=size[1], cursor="hand2",
+                                      image=ctk.CTkImage(rounded(placeholder(size[0] * 2, size[1] * 2), radius), size=size))
+        if self.short:
+            self.thumb_lbl.grid(row=0, column=0, rowspan=2, sticky="n", padx=(0, 12))
+        else:
+            self.thumb_lbl.grid(row=0, column=0, padx=14, pady=(14, 10))
         self.thumb_lbl.bind("<Button-1>", lambda e: webbrowser.open(info.url))
-        blank = Image.new("RGB", (400, 225), CARD2) if Image else None
-        if blank:
-            self._thumb_ref = ImageTk.PhotoImage(blank)
-            self.thumb_lbl.config(image=self._thumb_ref, width=400, height=225)
+        Tooltip(self.thumb_lbl, "Open the original page")
         if info.thumbnail:
-            self._load_thumb(info.thumbnail, (400, 225), self.thumb_lbl, badge=human_time(info.duration))
-        tk.Label(p, text=info.title, bg=CARD, fg=FG, font=(FONT, 12, "bold"), wraplength=400, justify="left",
-                 anchor="w").pack(fill="x", padx=18)
-        meta = " • ".join(x for x in (info.uploader, info.site, f"{compact(info.views)} views" if info.views else None,
-                                       f"{info.count} videos" if info.is_playlist else None) if x)
-        if meta:
-            tk.Label(p, text=meta, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=400, justify="left", anchor="w").pack(
-                fill="x", padx=18, pady=(2, 8))
+            def set_img(img, d=info.duration):
+                if not self.thumb_lbl.winfo_exists():
+                    return
+                if d:
+                    dr = ImageDraw.Draw(img)
+                    txt = human_time(d)
+                    try:
+                        from PIL import ImageFont
+                        fnt = ImageFont.truetype("segoeuib.ttf" if IS_WIN else "DejaVuSans-Bold.ttf",
+                                                 max(16, img.height // 12))
+                    except Exception:
+                        fnt = None
+                    tw_ = int(dr.textlength(txt, font=fnt)) if fnt else 9 * len(txt)
+                    pad = max(8, img.height // 40)
+                    th_ = (fnt.size if fnt else 14) + pad * 2
+                    x1, y1 = img.width - tw_ - pad * 4, img.height - th_ - pad * 2
+                    dr.rounded_rectangle((x1, y1, img.width - pad * 2, img.height - pad * 2), pad, fill=(0, 0, 0))
+                    dr.text((x1 + pad, y1 + pad * 0.6), txt, fill=(255, 255, 255), font=fnt)
+                self.thumb_lbl.configure(image=ctk.CTkImage(rounded(img, radius * 2), size=size))
+            self.thumbs.get(info.thumbnail, size, set_img)
 
-        tabs = tk.Frame(p, bg=CARD)
-        tabs.pack(fill="x", padx=18, pady=(6, 0))
-        self.tab = "video" if info.video else "audio"
-        self.tab_btns = {}
-        for key, label in (("video", "Video"), ("audio", "Audio")):
-            b = tk.Label(tabs, text=label, bg=CARD, font=(FONT, 11, "bold"), cursor="hand2", padx=18, pady=6)
-            b.pack(side="left", expand=True, fill="x")
-            b.bind("<Button-1>", lambda e, k=key: self._switch_tab(k))
-            self.tab_btns[key] = b
-        tk.Frame(p, bg=CARD2, height=1).pack(fill="x", padx=18)
-        self.opts = tk.Frame(p, bg=CARD)
-        self.opts.pack(fill="x", padx=18, pady=4)
+        title_kw = dict(text=info.title, font=F(14 if self.short else 15, "bold"), text_color=FG, wraplength=wrap,
+                        justify="left", anchor="w")
+        meta = "  •  ".join(x for x in (info.uploader, info.site, f"{compact(info.views)} views" if info.views else None,
+                                         f"{info.count} videos" if info.is_playlist else None) if x)
+        if self.short:
+            ctk.CTkLabel(text_parent, **title_kw).grid(row=0, column=1, sticky="new")
+            if meta:
+                ctk.CTkLabel(text_parent, text=meta, font=F(11), text_color=MUTED, wraplength=wrap, justify="left",
+                             anchor="w").grid(row=1, column=1, sticky="new", pady=(4, 0))
+        else:
+            ctk.CTkLabel(p, **title_kw).grid(row=1, column=0, sticky="ew", padx=18)
+            if meta:
+                ctk.CTkLabel(p, text=meta, font=F(12), text_color=MUTED, wraplength=wrap, justify="left",
+                             anchor="w").grid(row=2, column=0, sticky="ew", padx=18, pady=(4, 0))
 
-        opt = tk.Frame(p, bg=CARD)
-        opt.pack(fill="x", padx=18, pady=(8, 2))
-        tk.Label(opt, text="File name", bg=CARD, fg=MUTED, font=(FONT, 9)).pack(anchor="w")
-        self.name_var = tk.StringVar(value=info.title if not info.is_playlist else "")
-        ne = tk.Entry(opt, textvariable=self.name_var, bg=CARD2, fg=FG, insertbackground=FG, bd=0, font=(FONT, 10),
-                      relief="flat", highlightthickness=1, highlightbackground=CARD2, highlightcolor=ORANGE)
-        ne.pack(fill="x", ipady=6, pady=(2, 6))
-        if info.is_playlist:
-            ne.config(state="disabled", disabledbackground=CARD, disabledforeground=MUTED)
+        self.tabs = ctk.CTkSegmentedButton(
+            p, values=["Video", "Audio"], command=self._switch_tab, font=F(13, "bold"), height=36,
+            selected_color=ORANGE, selected_hover_color=ORANGE_H, unselected_color=CARD, unselected_hover_color=CARD_HOVER,
+            fg_color=CARD, text_color=FG)
+        self.tabs.grid(row=3, column=0, sticky="ew", padx=18, pady=(16, 8))
+        self.opts = ctk.CTkFrame(p, fg_color="transparent")
+        self.opts.grid(row=4, column=0, sticky="ew", padx=12)
+        self.opts.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(p, text="File name", font=F(12), text_color=MUTED, anchor="w").grid(
+            row=5, column=0, sticky="ew", padx=18, pady=(12, 2))
+        self.name_entry = ctk.CTkEntry(p, height=38, corner_radius=9, fg_color=CARD, border_color=LINE, text_color=FG,
+                                       font=F(13))
+        self.name_entry.grid(row=6, column=0, sticky="ew", padx=18)
+        if not info.is_playlist:
+            self.name_entry.insert(0, info.title)
+        else:
+            self.name_entry.configure(placeholder_text="(each video keeps its own name)", state="disabled")
         self.pl_var = tk.BooleanVar(value=info.is_playlist)
         if info.is_playlist or "list=" in info.url:
-            ttk.Checkbutton(opt, text=f"Whole playlist ({info.count})" if info.is_playlist else "Download the whole playlist",
-                            variable=self.pl_var).pack(anchor="w", pady=2)
-        self.dl_btn = Btn(p, "⬇   Download", self.start_download, "primary", font=(FONT, 13, "bold"), pady=12)
-        self.dl_btn.pack(fill="x", padx=18, pady=(10, 18))
-        self._switch_tab(self.tab)
+            ctk.CTkCheckBox(p, text=f"Whole playlist ({info.count} videos)" if info.is_playlist else
+                            "Download the whole playlist", variable=self.pl_var, font=F(12), text_color=FG,
+                            fg_color=ORANGE, hover_color=ORANGE_H, border_color=DIM).grid(
+                row=7, column=0, sticky="w", padx=18, pady=(10, 0))
+        ctk.CTkLabel(p, text="", height=6).grid(row=8, column=0)
+        self.action.grid(row=1, column=0, sticky="ew")
+        self._switch_tab("Video" if info.video else "Audio")
 
     def _switch_tab(self, key):
+        if not self.info or not getattr(self, "tabs", None) or not self.tabs.winfo_exists():
+            return
         self.tab = key
-        for k, b in self.tab_btns.items():
-            b.config(fg=ORANGE if k == key else MUTED)
+        self.tabs.set(key)
         for c in self.opts.winfo_children():
             c.destroy()
-        options = self.info.video if key == "video" else self.info.audio
+        options = self.info.video if key == "Video" else self.info.audio
         if not options:
-            tk.Label(self.opts, text="No video in this link — see the Audio tab.", bg=CARD, fg=MUTED).pack(pady=10)
+            ctk.CTkLabel(self.opts, text="No video in this link — see the Audio tab.", text_color=DIM, font=F(12)).grid(
+                row=0, column=0, pady=12)
             return
-        default = 0
-        if key == "video":
-            default = next((i for i, q in enumerate(options) if (q.height or 0) <= 1080), 0)
+        default = next((i for i, q in enumerate(options) if (q.height or 0) <= 1080), 0) if key == "Video" else 0
         self.quality_var.set(default)
+        rows = []
+
+        def paint():
+            for i, rw in enumerate(rows):
+                rw.configure(fg_color=ORANGE_SOFT if self.quality_var.get() == i else "transparent",
+                             border_color=ORANGE if self.quality_var.get() == i else LINE)
+
         for i, q in enumerate(options):
-            row = tk.Frame(self.opts, bg=CARD, cursor="hand2")
-            row.pack(fill="x", pady=1)
-            rb = tk.Radiobutton(row, variable=self.quality_var, value=i, bg=CARD, activebackground=CARD,
-                                selectcolor=CARD2, fg=ORANGE, highlightthickness=0, bd=0)
-            rb.pack(side="left")
-            name = tk.Label(row, text=("♪  " if q.is_audio else "▶  ") + q.label, bg=CARD, fg=FG, font=(FONT, 11), anchor="w")
-            name.pack(side="left", fill="x", expand=True, pady=7)
-            size = tk.Label(row, text=("~ " + human_size(q.size)) if q.size else ("" if self.info.is_playlist else "size unknown"),
-                            bg=CARD, fg=MUTED, font=(FONT, 10))
-            size.pack(side="right", padx=4)
-            for w in (row, name, size):
-                w.bind("<Button-1>", lambda e, v=i: self.quality_var.set(v))
-            tk.Frame(self.opts, bg=CARD2, height=1).pack(fill="x")
-
-    def _load_thumb(self, url, size, label, badge=""):
-        if Image is None:
-            return
-
-        def work():
-            try:
-                data = self._thumb_cache.get(url)
-                if data is None:
-                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                    data = urllib.request.urlopen(req, timeout=15).read()
-                    self._thumb_cache[url] = data
-                img = Image.open(io.BytesIO(data)).convert("RGB")
-                w, h = size
-                scale = max(w / img.width, h / img.height)
-                img = img.resize((int(img.width * scale) + 1, int(img.height * scale) + 1))
-                l, t = (img.width - w) // 2, (img.height - h) // 2
-                img = img.crop((l, t, l + w, t + h))
-                if badge:
-                    d = ImageDraw.Draw(img)
-                    tw = 9 * len(badge) + 10
-                    d.rounded_rectangle((8, h - 30, 8 + tw, h - 8), 5, fill=(0, 0, 0))
-                    d.text((14, h - 27), badge, fill=(255, 255, 255))
-                self.ui_q.put(("thumb", (label, img)))
-            except Exception:
-                pass
-        threading.Thread(target=work, daemon=True).start()
+            row = ctk.CTkFrame(self.opts, fg_color="transparent", corner_radius=10, border_width=1, border_color=LINE,
+                               cursor="hand2")
+            row.grid(row=i, column=0, sticky="ew", padx=6, pady=3)
+            row.grid_columnconfigure(1, weight=1)
+            rb = ctk.CTkRadioButton(row, text="", variable=self.quality_var, value=i, width=22, fg_color=ORANGE,
+                                    hover_color=ORANGE_H, border_color=DIM, command=paint)
+            rb.grid(row=0, column=0, padx=(12, 4), pady=10)
+            name = ctk.CTkLabel(row, text=q.label, font=F(13, "bold" if i == default else "normal"), text_color=FG,
+                                anchor="w")
+            name.grid(row=0, column=1, sticky="ew")
+            size_txt = ("≈ " + human_size(q.size)) if q.size else ("" if self.info.is_playlist else "size unknown")
+            sz = ctk.CTkLabel(row, text=size_txt, font=F(12), text_color=MUTED)
+            sz.grid(row=0, column=2, padx=(6, 14))
+            for w in (row, name, sz):
+                w.bind("<Button-1>", lambda e, v=i: (self.quality_var.set(v), paint()))
+            rows.append(row)
+        paint()
 
     # ------------------------------------------------ actions
-    def paste_and_go(self):
-        try:
-            text = self.root.clipboard_get()
-        except tk.TclError:
-            text = ""
-        self._placeholder(False)
-        self.entry.delete(0, "end")
-        self.entry.insert(0, text.strip())
-        self.go()
-
-    def go(self):
-        text = self.entry.get().strip()
-        if not text or text == self.placeholder:
-            return self.paste_and_go() if self._clip_text() else None
-        urls = engine.extract_urls(text)
-        if len(urls) > 1:
-            q = engine.BEST
-            for u in urls:
-                self.add_download(u, u, q, False, None)
-            self._set_status(f"Added {len(urls)} links with best quality")
-            return
-        if urls:
-            self.load(urls[0])
-        else:
-            self.search(text)
+    def open_folder(self):
+        os.makedirs(self.settings["folder"], exist_ok=True)
+        open_path(self.settings["folder"])
 
     def _clip_text(self) -> str:
         try:
@@ -635,17 +841,42 @@ class App:
         except tk.TclError:
             return ""
 
+    def paste_and_go(self):
+        text = self._clip_text()
+        if not text:
+            self._set_status("Clipboard is empty — copy a link first")
+            return
+        self.entry.delete(0, "end")
+        self.entry.insert(0, text)
+        self.last_clip = text
+        self.go()
+
+    def go(self):
+        text = self.entry.get().strip()
+        if not text:
+            return self.paste_and_go()
+        urls = engine.extract_urls(text)
+        if len(urls) > 1:
+            for u in urls:
+                self.add_download(u, u, engine.BEST, False, None)
+            self._set_status(f"Added {len(urls)} links with best quality")
+            return
+        if urls:
+            self.load(urls[0])
+        else:
+            self.search(text)
+
     def load(self, url: str):
         self.req_id += 1
         rid = self.req_id
         self.info_url = url
+        self.banner.grid_remove()
         self._show_loading()
         threading.Thread(target=self._info_worker, args=(rid, url), daemon=True).start()
 
     def _info_worker(self, rid, url):
         try:
-            info = self.engine.info(url)
-            self.ui_q.put(("info", (rid, info)))
+            self.ui_q.put(("info", (rid, self.engine.info(url))))
         except EngineError as e:
             self.ui_q.put(("info_err", (rid, e, url)))
         except Exception as e:
@@ -662,31 +893,121 @@ class App:
                 self.ui_q.put(("results", (rid, self.engine.search(query), query)))
             except EngineError as e:
                 self.ui_q.put(("info_err", (rid, e, "https://youtube.com")))
+            except Exception as e:
+                self.ui_q.put(("info_err", (rid, EngineError(str(e)[:200], repr(e)), "https://youtube.com")))
         threading.Thread(target=work, daemon=True).start()
 
     def start_download(self):
         if not self.info:
             return
-        options = self.info.video if self.tab == "video" else self.info.audio
+        options = self.info.video if self.tab == "Video" else self.info.audio
         if not options:
             return
         q = options[self.quality_var.get()]
-        name = self.name_var.get().strip()
         playlist = bool(self.pl_var.get())
+        name = self.name_entry.get().strip() if not self.info.is_playlist else ""
         clean = None
         if name and not playlist and name != self.info.title:
             clean = "".join(c if c not in '\\/:*?"<>|' else " " for c in name).strip()[:150] or None
-        self.add_download(self.info.url, name or self.info.title, q, playlist, clean)
-        self._set_status("Download added ⬇")
-        self.dl_btn.config(text="✔  Added — see Downloads")
-        self.root.after(1500, lambda: self.dl_btn.winfo_exists() and self.dl_btn.config(text="⬇   Download"))
+        self.add_download(self.info.url, name or self.info.title, q, playlist, clean,
+                          thumb=self.info.thumbnail, duration=self.info.duration)
+        self.dl_btn.configure(text="✓  Added to Downloads", fg_color=GOOD, hover_color=GOOD)
+        self.root.after(1600, lambda: self.dl_btn.winfo_exists() and self.dl_btn.configure(
+            text="Download", fg_color=ORANGE, hover_color=ORANGE_H))
 
-    def add_download(self, url, title, q: Quality, playlist, name):
-        it = Item(uuid.uuid4().hex, url, title, q, playlist, name, self.settings["folder"])
+    def add_download(self, url, title, q: Quality, playlist, name, thumb=None, duration=0):
+        it = Item(uuid.uuid4().hex, url, title, q, playlist, name, self.settings["folder"], thumb, duration)
         self.items.append(it)
-        self._refresh_list()
+        if self.filter in ("Done", "Failed"):
+            self._set_filter("All")
+        else:
+            self._render_list()
         self._save_history()
 
+    def play(self, it: Item):
+        if it.files:
+            open_path(it.files[0])
+        elif it.status == "Done":
+            open_path(it.folder)
+
+    def show(self, it: Item):
+        show_in_folder(it.files[0] if it.files else it.folder)
+
+    def details(self, it: Item):
+        messagebox.showinfo("Error details", f"{it.error}\n\n{it.detail}", parent=self.root)
+
+    def cancel(self, it: Item):
+        if it.active:
+            was_running = it.status != "Queued"
+            it.status = "Cancelled"
+            if was_running:
+                threading.Thread(target=self.engine.cancel, args=(it.id,), daemon=True).start()
+            self._mark(it)
+            self._save_history()
+
+    def retry(self, it: Item):
+        if it.status in ("Failed", "Cancelled"):
+            it.status, it.error, it.detail, it.pct, it.speed, it.eta = "Queued", "", "", 0, 0, 0
+            self._mark(it)
+            self._render_list()
+
+    def remove(self, it: Item):
+        if it.active:
+            self.cancel(it)
+        if it in self.items:
+            self.items.remove(it)
+        self._render_list()
+        self._save_history()
+
+    def clear_finished(self):
+        self.items = [i for i in self.items if i.active or i.status == "Failed"]
+        self._render_list()
+        self._save_history()
+
+    def _set_filter(self, value):
+        self.filter = value
+        self.filter_btn.set(value)
+        self._render_list()
+
+    # ------------------------------------------------ downloads list
+    def _visible(self) -> list[Item]:
+        f = self.filter
+        items = list(reversed(self.items))
+        if f == "Active":
+            items = [i for i in items if i.active]
+        elif f == "Done":
+            items = [i for i in items if i.status == "Done"]
+        elif f == "Failed":
+            items = [i for i in items if i.status in ("Failed", "Cancelled")]
+        return items[:150]
+
+    def _render_list(self):
+        vis = self._visible()
+        ids = [i.id for i in vis]
+        for iid in list(self.cards):
+            if iid not in ids:
+                self.cards.pop(iid).destroy()
+        for row, it in enumerate(vis):
+            card = self.cards.get(it.id)
+            if card is None:
+                card = self.cards[it.id] = DownloadCard(self.list, self, it)
+            card.grid(row=row, column=0, sticky="ew", pady=(0, 10), padx=(0, 6))
+        if vis:
+            self.empty.grid_remove()
+        else:
+            msg = {"All": "No downloads yet.\nPaste a link above and press Find.",
+                   "Active": "Nothing downloading right now.", "Done": "No finished downloads.",
+                   "Failed": "No failed downloads."}[self.filter]
+            self.empty.configure(text=msg)
+            self.empty.grid(row=0, column=0, pady=80)
+        counts = {"Active": sum(i.active for i in self.items),
+                  "Failed": sum(i.status in ("Failed", "Cancelled") for i in self.items)}
+        self.root.title(f"{APP} — {counts['Active']} downloading" if counts["Active"] else APP)
+
+    def _mark(self, it: Item):
+        self._dirty.add(it.id)
+
+    # ------------------------------------------------ workers
     def _dispatch(self):
         limit = max(1, int(self.settings.get("parallel", 3)))
         for it in self.items:
@@ -695,29 +1016,32 @@ class App:
             if it.status == "Queued":
                 it.status = "Starting"
                 self.running += 1
+                self._mark(it)
                 threading.Thread(target=self._dl_worker, args=(it,), daemon=True).start()
         self.root.after(500, self._dispatch)
 
     def _dl_worker(self, it: Item):
         try:
             os.makedirs(it.folder, exist_ok=True)
-
-            def prog(d):
-                self.ui_q.put(("prog", (it.id, d)))
-            files = self.engine.download(it.id, it.url, it.quality, it.folder, it.playlist, it.name, prog)
+            files = self.engine.download(it.id, it.url, it.quality, it.folder, it.playlist, it.name,
+                                         lambda d: self.ui_q.put(("prog", (it.id, d))))
             self.ui_q.put(("done", (it.id, files)))
         except EngineError as e:
             self.ui_q.put(("fail", (it.id, e)))
         except Exception as e:
             self.ui_q.put(("fail", (it.id, EngineError(str(e)[:200], repr(e)))))
 
-    # ------------------------------------------------ ui loop
+    def _get(self, iid) -> Item | None:
+        return next((i for i in self.items if i.id == iid), None)
+
     def _pump(self):
-        changed = False
+        relist = False
         try:
-            while True:
+            for _ in range(400):
                 kind, data = self.ui_q.get_nowait()
-                if kind == "info":
+                if kind == "call":
+                    data()
+                elif kind == "info":
                     rid, info = data
                     if rid == self.req_id:
                         self._show_info(info)
@@ -729,36 +1053,29 @@ class App:
                     rid, res, query = data
                     if rid == self.req_id:
                         self._show_results(res, query)
-                elif kind == "thumb":
-                    label, img = data
-                    if label.winfo_exists():
-                        ph = ImageTk.PhotoImage(img)
-                        label.config(image=ph, width=img.width, height=img.height)
-                        label.image = ph
                 elif kind == "prog":
                     iid, d = data
                     it = self._get(iid)
-                    if it and it.active and it.status != "Cancelled":
+                    if it and it.active:
                         if d["stage"] == "processing":
                             it.status, it.speed, it.eta = "Processing", 0, 0
                         else:
                             it.status, it.pct, it.speed, it.eta = "Downloading", d["pct"], d["speed"], d["eta"]
                             it.total = d["total"] or it.total
-                        changed = True
+                        self._mark(it)
                 elif kind == "done":
                     iid, files = data
                     it = self._get(iid)
                     self.running = max(0, self.running - 1)
                     if it and it.status != "Cancelled":
                         it.status, it.pct, it.files, it.speed, it.eta = "Done", 100, files, 0, 0
-                        if files and not it.playlist:
-                            it.title = os.path.splitext(os.path.basename(files[0]))[0] if it.title == it.url else it.title
-                            try:
-                                it.total = sum(os.path.getsize(f) for f in files)
-                            except OSError:
-                                pass
-                        self._notify(f"Downloaded: {it.title[:60]}")
-                    changed = True
+                        try:
+                            it.total = sum(os.path.getsize(f) for f in files) or it.total
+                        except OSError:
+                            pass
+                        self._set_status(f"Downloaded: {it.title}")
+                        self._mark(it)
+                        relist = True
                     self._save_history()
                 elif kind == "fail":
                     iid, e = data
@@ -766,170 +1083,72 @@ class App:
                     self.running = max(0, self.running - 1)
                     if it and it.status != "Cancelled":
                         it.status, it.error, it.detail = "Failed", e.friendly, e.detail
-                    changed = True
+                        self._mark(it)
+                        relist = True
                     self._save_history()
                 elif kind == "status":
                     self._set_status(data)
         except queue.Empty:
             pass
-        if changed:
-            self._refresh_list()
-        active = sum(1 for i in self.items if i.active)
-        self.root.title(f"{APP} — {active} downloading" if active else APP)
+        for iid in list(self._dirty):
+            card = self.cards.get(iid)
+            if card and card.winfo_exists():
+                card.update_view()
+        self._dirty.clear()
+        if relist and self.filter != "All":
+            self._render_list()
+        elif relist:
+            self._render_list()
         self.root.after(150, self._pump)
-
-    def _notify(self, msg):
-        self._set_status(msg)
-        try:
-            self.root.bell()
-        except Exception:
-            pass
-
-    def _get(self, iid) -> Item | None:
-        return next((i for i in self.items if i.id == iid), None)
-
-    def _refresh_list(self):
-        existing = set(self.tree.get_children())
-        wanted = []
-        for it in reversed(self.items):
-            wanted.append(it.id)
-            if it.status in ("Downloading",):
-                prog = text_bar(it.pct)
-            elif it.status == "Done":
-                prog = text_bar(100)
-            elif it.status == "Processing":
-                prog = "converting…"
-            elif it.status in ("Queued", "Starting"):
-                prog = "waiting…"
-            else:
-                prog = ""
-            ql = it.quality.label.replace(" Video", "").replace("Ultra HD", "UHD").replace(" kbps", "k").replace(" - ", " ")
-            vals = (it.title, ql, it.status, prog,
-                    human_size(it.total) if it.total else "",
-                    " • ".join(x for x in ((human_size(it.speed) + "/s") if it.speed else "", human_time(it.eta)) if x))
-            tag = ("done",) if it.status == "Done" else ("fail",) if it.status == "Failed" else (
-                ("dim",) if it.status == "Cancelled" else ())
-            if it.id in existing:
-                self.tree.item(it.id, values=vals, tags=tag)
-            else:
-                self.tree.insert("", "end", iid=it.id, values=vals, tags=tag)
-        for iid in existing - set(wanted):
-            self.tree.delete(iid)
-        for idx, iid in enumerate(wanted):
-            if self.tree.index(iid) != idx:
-                self.tree.move(iid, "", idx)
-
-    # ------------------------------------------------ list actions
-    def _sel(self) -> list[Item]:
-        return [i for i in (self._get(x) for x in self.tree.selection()) if i]
-
-    def _popup(self, e):
-        row = self.tree.identify_row(e.y)
-        if row:
-            if row not in self.tree.selection():
-                self.tree.selection_set(row)
-            self.menu.tk_popup(e.x_root, e.y_root)
-
-    def _show_error_of_sel(self):
-        s = self._sel()
-        self.err_lbl.config(text=(s[0].error + ("\nDetails: " + s[0].detail.splitlines()[0] if s[0].detail else ""))
-                            if s and s[0].status == "Failed" else "")
-
-    def open_sel(self):
-        for it in self._sel()[:1]:
-            if it.files:
-                open_path(it.files[0])
-            elif it.status == "Done":
-                open_path(it.folder)
-
-    def show_sel(self):
-        for it in self._sel()[:1]:
-            show_in_folder(it.files[0] if it.files else it.folder)
-
-    def copy_sel(self):
-        for it in self._sel()[:1]:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(it.url)
-            self.last_clip = it.url
-
-    def source_sel(self):
-        for it in self._sel()[:1]:
-            webbrowser.open(it.url)
-
-    def cancel_sel(self):
-        for it in self._sel():
-            if it.active:
-                if it.status == "Queued":
-                    it.status = "Cancelled"
-                else:
-                    it.status = "Cancelled"
-                    threading.Thread(target=self.engine.cancel, args=(it.id,), daemon=True).start()
-        self._refresh_list()
-        self._save_history()
-
-    def retry_sel(self):
-        for it in self._sel():
-            if it.status in ("Failed", "Cancelled"):
-                it.status, it.error, it.detail, it.pct, it.speed, it.eta = "Queued", "", "", 0, 0, 0
-        self._refresh_list()
-        self.err_lbl.config(text="")
-
-    def remove_sel(self):
-        for it in self._sel():
-            if it.active:
-                it.status = "Cancelled"
-                threading.Thread(target=self.engine.cancel, args=(it.id,), daemon=True).start()
-            self.items.remove(it)
-        self._refresh_list()
-        self._save_history()
-
-    def clear_finished(self):
-        self.items = [i for i in self.items if i.active or i.status == "Failed"]
-        self._refresh_list()
-        self._save_history()
 
     # ------------------------------------------------ clipboard
     def _watch_clipboard(self):
-        if self.settings.get("clipboard", True) and self.root.focus_displayof() is not None:
+        try:
+            focused = self.root.focus_displayof() is not None
+        except Exception:
+            focused = False
+        if self.settings.get("clipboard", True) and focused:
             clip = self._clip_text()
             if clip != self.last_clip:
                 self.last_clip = clip
                 urls = engine.extract_urls(clip)
                 if urls and len(clip) < 2000 and urls[0] != self.info_url:
                     self._clip_url = urls[0]
-                    self.banner_lbl.config(text=f"🔗  Copied link detected:  {urls[0][:90]}")
-                    self.banner.pack(fill="x", padx=22, pady=(0, 4), after=self.entry.master.master)
+                    self.banner_lbl.configure(text="Copied link detected:  " + urls[0])
+                    self.banner.grid(row=2, column=0, sticky="ew", padx=24, pady=(4, 2))
+                    self.root.after(50, lambda: self.banner_lbl.configure(
+                        text=ellipsize(self.banner_lbl, "Copied link detected:  " + self._clip_url,
+                                       self.banner_lbl.winfo_width() - 10)))
         self.root.after(1200, self._watch_clipboard)
 
     def _banner_go(self):
-        self.banner.pack_forget()
-        self._placeholder(False)
         self.entry.delete(0, "end")
         self.entry.insert(0, self._clip_url)
         self.load(self._clip_url)
 
-    # ------------------------------------------------ settings
+    # ------------------------------------------------ settings / lifecycle
     def open_settings(self):
         SettingsDialog(self)
 
     def _startup_checks(self):
         v = self.engine.version()
-        self.ui_q.put(("status", f"Engine: yt-dlp {v}"))
         if v == "not found":
-            self.ui_q.put(("status", "⚠ Download engine not found — reinstall the app"))
+            self.ui_q.put(("status", "⚠ Download engine not found — please reinstall the app"))
             return
+        self.ui_q.put(("status", f"Ready  •  engine yt-dlp {v}"))
         if self.settings.get("auto_update", True) and engine._bin("yt-dlp") and \
                 time.time() - float(self.settings.get("last_update", 0)) > 24 * 3600:
-            msg = self.engine.update()
+            msg = self.engine.update().lower()
             self.settings["last_update"] = time.time()
             self._save_settings()
             v = self.engine.version()
-            note = "up to date" if ("up to date" in msg.lower() or "updated" in msg.lower()) else "update check failed"
-            self.ui_q.put(("status", f"Engine: yt-dlp {v} ({note})"))
+            note = "up to date" if ("up to date" in msg or "updated" in msg) else "update check failed"
+            self.ui_q.put(("status", f"Ready  •  engine yt-dlp {v} ({note})"))
 
     def _on_close(self):
         active = [i for i in self.items if i.active]
-        if active and not messagebox.askyesno(APP, f"{len(active)} download(s) still running. Quit anyway?"):
+        if active and not messagebox.askyesno(APP, f"{len(active)} download(s) still running. Quit anyway?",
+                                              parent=self.root):
             return
         for i in active:
             i.status = "Cancelled"
@@ -945,103 +1164,141 @@ class SettingsDialog:
     def __init__(self, app: App):
         self.app = app
         s = app.settings
-        w = self.w = tk.Toplevel(app.root, bg=CARD)
+        w = self.w = ctk.CTkToplevel(app.root, fg_color=PANEL)
         w.title("Settings")
-        w.geometry("640x620")
+        scale = ctk.ScalingTracker.get_window_scaling(app.root)
+        lw, lh = app.root.winfo_screenwidth() / scale, app.root.winfo_screenheight() / scale
+        sw_, sh_ = int(min(640, lw * 0.9)), int(min(680, lh * 0.82))
+        x = app.root.winfo_rootx() + max(0, int((app.root.winfo_width() - sw_ * scale) / 2))
+        y = app.root.winfo_rooty() + 30
+        w.geometry(f"{sw_}x{sh_}+{x}+{max(0, y)}")
+        w.minsize(int(min(480, lw * 0.8)), int(min(380, lh * 0.6)))
         w.transient(app.root)
-        w.grab_set()
+        w.after(250, self._finish_open)
+        w.grid_columnconfigure(0, weight=1)
+        w.grid_rowconfigure(0, weight=1)
 
-        def section(title):
-            tk.Label(w, text=title, bg=CARD, fg=FG, font=(FONT, 12, "bold"), anchor="w").pack(fill="x", padx=22, pady=(16, 4))
+        body = ctk.CTkScrollableFrame(w, fg_color=PANEL, scrollbar_button_color=LINE)
+        body.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 0))
+        body.grid_columnconfigure(0, weight=1)
+        self.r = 0
 
-        def note(text):
-            tk.Label(w, text=text, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=590, justify="left", anchor="w").pack(
-                fill="x", padx=22)
+        def section(title, note=None):
+            ctk.CTkLabel(body, text=title, font=F(15, "bold"), text_color=FG, anchor="w").grid(
+                row=self.r, column=0, sticky="ew", padx=16, pady=(18, 4))
+            self.r += 1
+            if note:
+                ctk.CTkLabel(body, text=note, font=F(12), text_color=MUTED, wraplength=sw_ - 90, justify="left",
+                             anchor="w").grid(row=self.r, column=0, sticky="ew", padx=16)
+                self.r += 1
+
+        def line():
+            f = ctk.CTkFrame(body, fg_color="transparent")
+            f.grid(row=self.r, column=0, sticky="ew", padx=16, pady=5)
+            self.r += 1
+            return f
 
         section("Save downloads to")
-        row = tk.Frame(w, bg=CARD)
-        row.pack(fill="x", padx=22, pady=4)
-        self.folder = tk.StringVar(value=s["folder"])
-        tk.Entry(row, textvariable=self.folder, bg=CARD2, fg=FG, insertbackground=FG, bd=0, font=(FONT, 10),
-                 highlightthickness=1, highlightbackground=CARD2, highlightcolor=ORANGE).pack(
-            side="left", fill="x", expand=True, ipady=6)
-        Btn(row, "Browse…", self.browse, "normal").pack(side="left", padx=(8, 0))
+        row = line()
+        row.grid_columnconfigure(0, weight=1)
+        self.folder = ctk.CTkEntry(row, height=36, fg_color=CARD, border_color=LINE, text_color=FG, font=F(12))
+        self.folder.insert(0, s["folder"])
+        self.folder.grid(row=0, column=0, sticky="ew")
+        ghost_button(row, "Browse…", self.browse, width=90).grid(row=0, column=1, padx=(8, 0))
 
         section("Downloads")
-        row = tk.Frame(w, bg=CARD)
-        row.pack(fill="x", padx=22, pady=4)
-        tk.Label(row, text="At the same time:", bg=CARD, fg=FG).pack(side="left")
-        self.parallel = tk.StringVar(value=str(s.get("parallel", 3)))
-        ttk.Spinbox(row, from_=1, to=6, width=4, textvariable=self.parallel).pack(side="left", padx=8)
+        row = line()
+        ctk.CTkLabel(row, text="Downloads at the same time", font=F(13), text_color=FG).grid(row=0, column=0, sticky="w")
+        self.parallel = ctk.CTkSegmentedButton(row, values=["1", "2", "3", "4", "5"], font=F(12), selected_color=ORANGE,
+                                               selected_hover_color=ORANGE_H, unselected_color=CARD, fg_color=CARD)
+        self.parallel.set(str(min(5, int(s.get("parallel", 3)))))
+        self.parallel.grid(row=0, column=1, padx=12)
         self.clip = tk.BooleanVar(value=s.get("clipboard", True))
-        ttk.Checkbutton(w, text="Notice copied links (clipboard watch)", variable=self.clip).pack(anchor="w", padx=22, pady=2)
+        ctk.CTkCheckBox(line(), text="Notice copied links automatically", variable=self.clip, font=F(13), text_color=FG,
+                        fg_color=ORANGE, hover_color=ORANGE_H, border_color=DIM).grid(row=0, column=0, sticky="w")
 
-        section("Logins (only if a site blocks you)")
-        note("Pick a browser where you are logged in to YouTube/Facebook/Instagram; downloads will use that login. "
-             "On Windows, Chrome and Edge often lock their cookies — Firefox works best. "
-             "Or choose a cookies.txt file (export it with the \"Get cookies.txt LOCALLY\" extension).")
-        row = tk.Frame(w, bg=CARD)
-        row.pack(fill="x", padx=22, pady=6)
-        tk.Label(row, text="Browser:", bg=CARD, fg=FG).pack(side="left")
-        self.browser = tk.StringVar(value=s.get("cookies_browser", "None"))
-        ttk.Combobox(row, values=self.BROWSERS, textvariable=self.browser, state="readonly", width=12).pack(side="left", padx=8)
-        row = tk.Frame(w, bg=CARD)
-        row.pack(fill="x", padx=22, pady=2)
-        self.cfile = tk.StringVar(value=s.get("cookies_file", ""))
-        tk.Label(row, text="cookies.txt:", bg=CARD, fg=FG).pack(side="left")
-        tk.Entry(row, textvariable=self.cfile, bg=CARD2, fg=FG, insertbackground=FG, bd=0, font=(FONT, 9),
-                 highlightthickness=1, highlightbackground=CARD2, highlightcolor=ORANGE).pack(
-            side="left", fill="x", expand=True, padx=8, ipady=5)
-        Btn(row, "Choose…", self.pick_cookies, "normal").pack(side="left")
-        Btn(row, "Clear", lambda: self.cfile.set(""), "ghost").pack(side="left", padx=4)
+        section("Logins — only if a site blocks you",
+                "Choose a browser where you are logged in (YouTube, Facebook, Instagram…); downloads will use that "
+                "login. On Windows, Chrome and Edge often lock their cookies — Firefox works best. Or use a "
+                "cookies.txt file exported with the \"Get cookies.txt LOCALLY\" extension.")
+        row = line()
+        ctk.CTkLabel(row, text="Browser", font=F(13), text_color=FG, width=90, anchor="w").grid(row=0, column=0)
+        self.browser = ctk.CTkOptionMenu(row, values=self.BROWSERS, font=F(12), fg_color=CARD, button_color=CARD_HOVER,
+                                         button_hover_color=LINE, dropdown_fg_color=CARD, text_color=FG, width=160)
+        self.browser.set(s.get("cookies_browser", "None"))
+        self.browser.grid(row=0, column=1, sticky="w")
+        row = line()
+        row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(row, text="cookies.txt", font=F(13), text_color=FG, width=90, anchor="w").grid(row=0, column=0)
+        self.cfile = ctk.CTkEntry(row, height=34, fg_color=CARD, border_color=LINE, text_color=FG, font=F(11),
+                                  placeholder_text="(none)", placeholder_text_color=DIM)
+        if s.get("cookies_file"):
+            self.cfile.insert(0, s["cookies_file"])
+        self.cfile.grid(row=0, column=1, sticky="ew")
+        ghost_button(row, "Choose…", self.pick_cookies, width=84).grid(row=0, column=2, padx=(8, 0))
+        ghost_button(row, "Clear", lambda: self.cfile.delete(0, "end"), width=64).grid(row=0, column=3, padx=(6, 0))
 
-        section("Download engine")
+        section("Download engine", "The engine (yt-dlp) keeps sites working. It can update itself once a day.")
         self.auto = tk.BooleanVar(value=s.get("auto_update", True))
-        ttk.Checkbutton(w, text="Update automatically once a day (keeps sites working)", variable=self.auto).pack(
-            anchor="w", padx=22, pady=2)
-        row = tk.Frame(w, bg=CARD)
-        row.pack(fill="x", padx=22, pady=6)
-        self.upd_lbl = tk.Label(row, text="", bg=CARD, fg=MUTED, font=(FONT, 9))
-        Btn(row, "Update now", self.update_now, "normal").pack(side="left")
-        self.upd_lbl.pack(side="left", padx=10)
+        ctk.CTkCheckBox(line(), text="Update automatically once a day", variable=self.auto, font=F(13), text_color=FG,
+                        fg_color=ORANGE, hover_color=ORANGE_H, border_color=DIM).grid(row=0, column=0, sticky="w")
+        row = line()
+        ghost_button(row, "Update now", self.update_now, width=110).grid(row=0, column=0)
+        self.upd_lbl = ctk.CTkLabel(row, text="", font=F(12), text_color=MUTED)
+        self.upd_lbl.grid(row=0, column=1, padx=12)
 
-        bottom = tk.Frame(w, bg=CARD)
-        bottom.pack(fill="x", side="bottom", padx=22, pady=18)
-        Btn(bottom, "Save", self.save, "primary").pack(side="right")
-        Btn(bottom, "Cancel", w.destroy, "normal").pack(side="right", padx=8)
-        tk.Label(bottom, text=f"Video Downloader {VERSION}", bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left")
+        section("Can't be downloaded",
+                "Netflix, Prime Video, Disney+/Hotstar, Hoichoi, Chorki and Spotify lock their content with DRM. "
+                "Use the download option inside their own apps.")
+
+        # fixed bottom bar — always visible, whatever the screen size
+        bottom = ctk.CTkFrame(w, fg_color=BG, corner_radius=0)
+        bottom.grid(row=1, column=0, sticky="ew")
+        bottom.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(bottom, text=f"Video Downloader v{VERSION}", font=F(11), text_color=DIM).grid(
+            row=0, column=0, sticky="w", padx=18)
+        ghost_button(bottom, "Cancel", w.destroy, width=90).grid(row=0, column=1, pady=12)
+        primary_button(bottom, "Save", self.save, height=34, size=13, width=100).grid(row=0, column=2, padx=(8, 18))
+
+    def _finish_open(self):
+        try:
+            ico = os.path.join(engine.app_dir(), "icon.ico")
+            if IS_WIN and os.path.isfile(ico):
+                self.w.iconbitmap(ico)
+            self.w.lift()
+            self.w.focus_force()
+            self.w.grab_set()
+        except Exception:
+            pass
 
     def browse(self):
         d = filedialog.askdirectory(initialdir=self.folder.get(), parent=self.w)
         if d:
-            self.folder.set(d)
+            self.folder.delete(0, "end")
+            self.folder.insert(0, os.path.normpath(d))
 
     def pick_cookies(self):
         f = filedialog.askopenfilename(parent=self.w, filetypes=[("cookies.txt", "*.txt"), ("All files", "*.*")])
         if f:
-            self.cfile.set(f)
+            self.cfile.delete(0, "end")
+            self.cfile.insert(0, os.path.normpath(f))
 
     def update_now(self):
-        self.upd_lbl.config(text="Updating…")
+        self.upd_lbl.configure(text="Updating…")
 
         def work():
             msg = self.app.engine.update()
             v = self.app.engine.version()
             self.app.settings["last_update"] = time.time()
-            self.app.ui_q.put(("status", f"Engine: yt-dlp {v}"))
-            try:
-                self.w.after(0, lambda: self.upd_lbl.config(text=f"{msg[:70]}  (now {v})"))
-            except Exception:
-                pass
+            self.app.ui_q.put(("status", f"Ready  •  engine yt-dlp {v}"))
+            short = "Up to date" if "up to date" in msg.lower() else ("Updated" if "updated" in msg.lower() else msg[:60])
+            self.app.ui_q.put(("call", lambda: self.w.winfo_exists() and self.upd_lbl.configure(text=f"{short}  (v{v})")))
         threading.Thread(target=work, daemon=True).start()
 
     def save(self):
         s = self.app.settings
         s["folder"] = self.folder.get().strip() or default_folder()
-        try:
-            s["parallel"] = max(1, min(6, int(self.parallel.get())))
-        except ValueError:
-            pass
+        s["parallel"] = int(self.parallel.get() or 3)
         s["clipboard"] = self.clip.get()
         s["cookies_browser"] = self.browser.get()
         s["cookies_file"] = self.cfile.get().strip()
@@ -1051,31 +1308,18 @@ class SettingsDialog:
         self.w.destroy()
 
 
-def make_icon(size=256):
-    """Orange rounded square with a white download arrow (same as the phone app)."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    s = size / 108
-    d.rounded_rectangle((4 * s, 4 * s, 104 * s, 104 * s), radius=24 * s, fill=(255, 106, 19, 255))
-    d.polygon([(49 * s, 26 * s), (59 * s, 26 * s), (59 * s, 52 * s), (70 * s, 52 * s), (54 * s, 70 * s),
-               (38 * s, 52 * s), (49 * s, 52 * s)], fill="white")
-    d.polygon([(30 * s, 68 * s), (37 * s, 68 * s), (37 * s, 76 * s), (71 * s, 76 * s), (71 * s, 68 * s),
-               (78 * s, 68 * s), (78 * s, 84 * s), (30 * s, 84 * s)], fill="white")
-    return img
-
-
 def main():
-    if sys.platform.startswith("win"):
+    if IS_WIN:
         try:
             import ctypes
-            ctypes.windll.shcore.SetProcessDpiAwareness(1)
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hemelsid.VideoDownloader")
         except Exception:
             pass
-    root = tk.Tk()
+    ctk.set_appearance_mode("dark")
+    root = ctk.CTk()
     App(root)
     if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
-        root.after(3000, root.destroy)
+        root.after(4000, root.destroy)
     root.mainloop()
 
 

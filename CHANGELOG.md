@@ -4,6 +4,14 @@ Every push to `main` builds a new Release (`v1.<build number>`); all Releases ar
 Earlier test builds v1–v6 were made before this repo existed; they are in Releases as v0.1–v0.6
 (signed with different keys, so uninstall before installing one of them).
 
+## v1.5 — 2026-11-01
+- PC app redesigned for a more professional look (CustomTkinter): rounded controls, dark title bar,
+  logo, download cards with thumbnails, progress bars and icon buttons, filters (All / Active /
+  Done / Failed), highlighted quality choices.
+- Fits every screen: sizes follow Windows display scaling (100–150%+); small screens start maximized
+  with a compact preview; long titles end with "…" instead of being cut off.
+- Download button always visible below the preview; Settings scrolls with Save/Cancel always visible.
+
 ## v1.4 — 2026-10-31
 - **New: PC app for Windows** — installer and portable zip in every Release. Paste a link or search
   YouTube, preview with thumbnail, every quality with its size, rename, playlists, download queue
