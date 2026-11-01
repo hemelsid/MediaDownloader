@@ -40,3 +40,13 @@ jobs:
             yt-dlp -v --skip-download --print "OK %(extractor)s | %(title).60s | %(format_id)s" "$u" 2>&1 | grep -v "^\[debug\] \(Loaded\|Plugin\|Lazy\)" | tail -25 || true
             echo "::endgroup::"
           done
+  tiktok-page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Read TikTok pages with a real browser
+        run: |
+          pip -q install playwright && python -m playwright install --with-deps chromium > /dev/null
+          python .github/tiktok_probe.py ${{ github.event.inputs.urls }}
