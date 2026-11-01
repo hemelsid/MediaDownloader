@@ -4,7 +4,7 @@ Every push to `main` builds a new Release (`v1.<build number>`); all Releases ar
 Earlier test builds v1–v6 were made before this repo existed; they are in Releases as v0.1–v0.6
 (signed with different keys, so uninstall before installing one of them).
 
-## NEXT — 2026-11-02
+## v1.11 — 2026-11-02
 - **TikTok fixed (phone):** TikTok now only answers real browsers, so the phone's engine was refused.
   The app now reads TikTok videos through a hidden built-in browser: every quality (no watermark),
   MP3/M4A, and photo posts ("All photos"). Works with shared links (vt.tiktok.com, vm.tiktok.com),
