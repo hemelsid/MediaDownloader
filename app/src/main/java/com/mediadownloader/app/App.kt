@@ -9,6 +9,7 @@ class App : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         Notifications.createChannels(this)
+        Prefs.init(this)
         Library.init(this)
         Downloads.init(this)
     }

@@ -110,7 +110,7 @@ object Browser {
         Regex("""/(view_video|video\d|videos?/[\w-]{4,})""", RegexOption.IGNORE_CASE),
     )
 
-    fun isVideoPage(u: String) = videoPages.any { it.containsMatchIn(u) }
+    fun isVideoPage(u: String) = videoPages.any { it.containsMatchIn(u) } || TikTok.isPostLink(u)
     fun isMediaFile(u: String) = mediaRegex.containsMatchIn(u.substringBefore('#').substringBefore('?'))
     private fun isFacebook(u: String) = Cookies.hostOf(u)?.let { it.contains("facebook.") || it.contains("fbcdn.") || it == "fb.watch" } == true
 
@@ -280,6 +280,14 @@ object Browser {
           var strong=/\/(reel|reels)\/|\/videos\/|\/watch\/?\?v=|[?&]v=|\/status\/|\/video\/|\/p\/|\/tv\//;
           var weak=/story\.php|story_fbid|\/permalink|\/posts\//;
           var link='',weakLink='',text='',el=best;
+          if(/(^|\.)tiktok\.com$/.test(location.hostname)){
+            // TikTok feed: the player's box id holds the video id ("xgwrapper-0-<id>")
+            var ttId='',ttUser='',p=best;
+            for(var k=0;k<8&&p&&!ttId;k++){var m=/-(\d{15,21})$/.exec(p.id||''); if(m) ttId=m[1]; p=p.parentElement;}
+            if(ttId){var box=best.closest('article,section,[data-e2e*="item"]')||document;
+              var ua=box.querySelector('a[href^="/@"]'); if(ua) ttUser=(ua.getAttribute('href')||'').slice(2).split(/[/?]/)[0];
+              link='https://www.tiktok.com/@'+ttUser+'/video/'+ttId;}
+          }
           for(var i=0;i<25&&el;i++){
             el=el.parentElement; if(!el) break;
             var as=el.querySelectorAll('a[href]');

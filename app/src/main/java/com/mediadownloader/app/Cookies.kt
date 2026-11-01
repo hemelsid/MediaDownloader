@@ -120,6 +120,13 @@ object Cookies {
             val cookies = browserCookies("https://$d") + browserCookies("https://www.$d") + browserCookies("https://m.$d")
             cookies.forEach { (k, v) -> lines += listOf(".$d", "TRUE", "/", "TRUE", expiry, k, v).joinToString("\t") }
         }
+        // TikTok's video servers sit on other domains but want the tiktok.com cookies
+        if (urls.any { TikTok.isTikTok(it) || it == TikTok.REFERER }) {
+            val tt = browserCookies("https://www.tiktok.com")
+            urls.mapNotNull { hostOf(it) }.map { baseDomain(it) }.filter { it !in domains }.distinct().forEach { d ->
+                tt.forEach { (k, v) -> lines += listOf(".$d", "TRUE", "/", "TRUE", expiry, k, v).joinToString("\t") }
+            }
+        }
         if (lines.isEmpty()) return null
         val out = File(dir, "cookies.txt")
         out.writeText("# Netscape HTTP Cookie File\n" + lines.joinToString("\n") + "\n")

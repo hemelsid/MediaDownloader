@@ -1536,6 +1536,10 @@ class SettingsDialog:
         self.clip = tk.BooleanVar(value=s.get("clipboard", True))
         ctk.CTkCheckBox(line(), text="Notice copied links automatically", variable=self.clip, font=F(13), text_color=FG,
                         fg_color=ORANGE, hover_color=ORANGE_H, border_color=DIM).grid(row=0, column=0, sticky="w")
+        self.subs = tk.BooleanVar(value=s.get("subtitles", False))
+        ctk.CTkCheckBox(line(), text="Save subtitles inside videos (English, Bangla) when the site has them",
+                        variable=self.subs, font=F(13), text_color=FG, fg_color=ORANGE, hover_color=ORANGE_H,
+                        border_color=DIM).grid(row=0, column=0, sticky="w")
 
         section("Browser button", "What happens when you press \"Download this video\" in your browser.")
         row = line()
@@ -1649,6 +1653,7 @@ class SettingsDialog:
         s["auto_update"] = self.auto.get()
         s["ext_mode"] = next((k for k, v in self.MODES.items() if v == self.ext_mode.get()), "panel")
         s["notify"] = self.notify.get()
+        s["subtitles"] = self.subs.get()
         s["autostart"] = self.autostart.get()
         s["background"] = self.background.get()
         threading.Thread(target=wi.set_autostart, args=(s["autostart"],), daemon=True).start()

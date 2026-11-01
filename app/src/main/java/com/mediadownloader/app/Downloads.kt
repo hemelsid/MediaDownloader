@@ -35,6 +35,9 @@ data class QualityOption(
     val size: Long,
     val height: Int? = null,        // max video height; null = best available
     val audio: AudioKind? = null,   // non-null = audio only
+    val direct: String? = null,     // ready file link (TikTok) — downloaded instead of the page link
+    val images: List<String> = emptyList(),  // photo post: every photo
+    val image: Boolean = false,     // this one item is a photo
 ) {
     val isAudio get() = audio != null
 
@@ -56,6 +59,12 @@ data class QualityOption(
                 // Prefer H.264 + AAC so the file plays in every phone gallery
                 req.addOption("-S", if (height != null) "res:$height,vcodec:h264,acodec:m4a" else "res,vcodec:h264,acodec:m4a")
                 req.addOption("--merge-output-format", "mp4")
+                if (Prefs.subtitles.value && direct == null) {
+                    req.addOption("--write-subs")
+                    req.addOption("--write-auto-subs")
+                    req.addOption("--sub-langs", "en.*,bn.*,-live_chat")
+                    req.addOption("--embed-subs")
+                }
             }
         }
     }
@@ -110,7 +119,8 @@ data class DownloadItem(
 object Downloads {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val ready = CompletableDeferred<Boolean>()
-    private val semaphore = Semaphore(3)
+    private val semaphore = Semaphore(5)
+    private val running = AtomicInteger()
     private val jobs = ConcurrentHashMap<String, Job>()
     private val counter = AtomicInteger()
     private lateinit var appCtx: Context
@@ -200,7 +210,7 @@ object Downloads {
         req.addOption("--socket-timeout", 20)
         if (referer != null && referer != url) {
             req.addOption("--referer", referer)
-            Browser.userAgent?.let { req.addOption("--user-agent", it) }
+            (if (referer == TikTok.REFERER) TikTok.DESKTOP_UA else Browser.userAgent)?.let { req.addOption("--user-agent", it) }
         }
         Cookies.fileForRun(appCtx, runDir, listOfNotNull(url, referer))?.let { req.addOption("--cookies", it.absolutePath) }
     }
@@ -247,6 +257,7 @@ object Downloads {
                     "Use the download option in their own app instead.", "DRM protected service", null, true
             )
         }
+        if (TikTok.isPostLink(url)) return TikTok.loadInfo(appCtx, url)
         if (!ready.await()) throw InfoException(_engine.value, _engine.value, null, false)
         val pid = "info-${counter.incrementAndGet()}"
         val dir = File(appCtx.cacheDir, pid).apply { mkdirs() }
@@ -359,9 +370,20 @@ object Downloads {
         ctx: Context, url: String, option: QualityOption, playlist: Boolean = false, info: MediaInfo? = null,
         customName: String? = null, referer: String? = info?.referer,
     ) {
-        val name = customName?.let { Storage.sanitize(it) }?.ifBlank { null }
+        if (option.images.isNotEmpty()) {
+            // Photo post: one download per photo, numbered
+            val base = Storage.sanitize(customName ?: info?.title ?: "TikTok photo").take(70).ifBlank { "TikTok photo" }
+            option.images.forEachIndexed { i, img ->
+                enqueue(ctx, url, QualityOption("Photo", 0, direct = img, image = true), false, info,
+                    "$base - ${"%02d".format(i + 1)}", referer)
+            }
+            return
+        }
+        // Ready file links (TikTok) have no title of their own: name the file after the post
+        val name = (customName ?: info?.title?.takeIf { option.direct != null }?.take(80))
+            ?.let { Storage.sanitize(it) }?.ifBlank { null }
         val item = DownloadItem(
-            id = UUID.randomUUID().toString(), url = url, option = option, playlist = playlist,
+            id = UUID.randomUUID().toString(), url = option.direct ?: url, option = option, playlist = playlist,
             referer = referer, customName = name,
             title = name ?: info?.title ?: url,
             thumbnail = info?.thumbnail, durationSec = info?.durationSec ?: 0,
@@ -372,7 +394,7 @@ object Downloads {
     }
 
     fun extractUrls(text: String): List<String> =
-        Regex("""https?://\S+""").findAll(text).map { it.value.trimEnd('.', ',', ')', '"', '\'') }.distinct().toList()
+        Regex("""https?://\S+""").findAll(text).map { TikTok.normalize(it.value.trimEnd('.', ',', ')', '"', '\'')) }.distinct().toList()
 
     fun cancel(id: String) {
         update(id) { copy(status = Status.CANCELLED, speed = "", etaSec = -1) }
@@ -409,9 +431,30 @@ object Downloads {
 
     private fun start(id: String) {
         jobs[id] = scope.launch {
-            semaphore.withPermit { run(id) }
+            semaphore.withPermit {
+                // the user's limit (Settings) — may be lower than the 5 slots
+                while (running.get() >= Prefs.parallel.value) kotlinx.coroutines.delay(400)
+                running.incrementAndGet()
+                try {
+                    waitForWifi(id)
+                    run(id)
+                } finally {
+                    running.decrementAndGet()
+                }
+            }
             jobs.remove(id)
         }
+    }
+
+    /** Wi-Fi only (Settings): hold the download, showing why, until an unmetered network is back. */
+    private suspend fun waitForWifi(id: String) {
+        var shown = false
+        while (Prefs.wifiOnly.value && !Prefs.onUnmeteredNetwork()) {
+            if (get(id)?.status != Status.QUEUED) return
+            if (!shown) { update(id) { copy(speed = "Waiting for Wi-Fi") }; shown = true }
+            kotlinx.coroutines.delay(3000)
+        }
+        if (shown) update(id) { copy(speed = "") }
     }
 
     private suspend fun run(id: String) {
@@ -425,6 +468,11 @@ object Downloads {
         val tmp = File(appCtx.cacheDir, "dl/$id").apply { deleteRecursively(); mkdirs() }
         val out = File(tmp, "out").apply { mkdirs() }
         try {
+            if (item.option.image) {
+                val f = File(out, "${item.customName ?: "photo"}.${TikTok.imageExt(item.url)}")
+                update(id) { copy(status = Status.DOWNLOADING) }
+                runInterruptible { TikTok.fetch(item.url, f) { p, _ -> onOutput(id, p, -1, "[download] $p%") } }
+            } else {
             val template = when {
                 item.customName != null && !item.playlist -> "${item.customName}.%(ext)s"
                 item.playlist -> "%(playlist_index)03d - %(title).140B.%(ext)s"
@@ -444,6 +492,7 @@ object Downloads {
                     addCommon(this, tmp, item.url, item.referer, args)
                 }
             }, id) { progress, eta, line -> onOutput(id, progress, eta, line) }
+            }
 
             if (get(id)?.status == Status.CANCELLED) return
             update(id) { copy(status = Status.PROCESSING, progress = 100f, speed = "", etaSec = -1) }

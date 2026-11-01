@@ -94,6 +94,18 @@
   function videoLink(v) {
     const here = location.href;
     if (/youtube\.com\/(watch|shorts\/|live\/|embed\/)|youtu\.be\//.test(here)) return here;
+    if (/(^|\.)tiktok\.com$/.test(location.hostname)) {
+      // TikTok feed: the page link is just "/foryou"; the player's box id holds the video id ("xgwrapper-0-<id>")
+      let p = v, id = "";
+      for (let i = 0; i < 8 && p && !id; i++) { const m = /-(\d{15,21})$/.exec(p.id || ""); if (m) id = m[1]; p = p.parentElement; }
+      if (id) {
+        const box = v.closest('article, section, [data-e2e*="item"]') || document;
+        const a = box.querySelector('a[href^="/@"]');
+        const user = a ? (a.getAttribute("href") || "").slice(2).split(/[/?]/)[0] : "";
+        return `https://www.tiktok.com/@${user}/video/${id}`;
+      }
+      if (/\/@[^/]*\/(video|photo)\/\d+/.test(here)) return here;
+    }
     // Look for the post's own link close to the video (feeds: Facebook, Instagram, X…).
     // Stop before reaching containers much bigger than the video, so we never grab a neighbour's link.
     const vr = v.getBoundingClientRect();

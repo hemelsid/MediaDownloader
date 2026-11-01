@@ -3,6 +3,7 @@ package com.mediadownloader.app
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,7 +26,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -63,6 +68,34 @@ fun SettingsScreen(onBack: () -> Unit) {
             Text("Settings", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
         LazyColumn(contentPadding = PaddingValues(16.dp)) {
+            item {
+                val wifi by Prefs.wifiOnly.collectAsState()
+                val par by Prefs.parallel.collectAsState()
+                val subs by Prefs.subtitles.collectAsState()
+                val bg by Prefs.backgroundAudio.collectAsState()
+                Section("Downloads") {
+                    Toggle("Wi-Fi only", "Wait for Wi-Fi instead of using mobile data", wifi) { Prefs.setWifiOnly(it) }
+                    Toggle("Save subtitles", "Put subtitles (English, Bangla) inside videos when the site has them", subs) { Prefs.setSubtitles(it) }
+                    Text("Downloads at the same time", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
+                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(1, 2, 3, 5).forEach { n ->
+                            FilterChip(
+                                selected = par == n, onClick = { Prefs.setParallel(n) }, label = { Text("$n") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Orange, selectedLabelColor = androidx.compose.ui.graphics.Color.White),
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Section("Player") {
+                    Toggle("Keep music playing in the background", "Audio files keep playing when you leave the player or lock the screen", bg) {
+                        Prefs.setBackgroundAudio(it)
+                    }
+                    Text("Videos go into a small floating window (picture-in-picture) when you press Home while they play.",
+                        color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                }
+                Spacer(Modifier.height(16.dp))
+            }
             item {
                 Section("Login (only if needed)") {
                     Text(
@@ -116,6 +149,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Text("Save folder: Download/$SAVE_FOLDER", color = Muted, fontSize = 12.sp)
             }
         }
+    }
+}
+
+@Composable
+private fun Toggle(title: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(hint, color = Muted, fontSize = 12.sp)
+        }
+        Switch(checked = checked, onCheckedChange = onChange, colors = SwitchDefaults.colors(checkedTrackColor = Orange))
     }
 }
 

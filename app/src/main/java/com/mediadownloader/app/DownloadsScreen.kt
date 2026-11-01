@@ -140,7 +140,7 @@ private fun DownloadRow(item: DownloadItem) {
 }
 
 private fun leftText(i: DownloadItem) = when (i.status) {
-    Status.QUEUED -> "Queued"
+    Status.QUEUED -> i.speed.ifBlank { "Queued" }
     Status.STARTING -> "Starting…"
     Status.DOWNLOADING -> "%.0f%%".format(i.progress) + if (i.total.isNotBlank()) "  of ${i.total}" else ""
     Status.PROCESSING -> "Converting…"

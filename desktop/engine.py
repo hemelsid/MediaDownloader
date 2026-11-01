@@ -147,6 +147,25 @@ def is_youtube(url: str) -> bool:
     return h.endswith("youtube.com") or h == "youtu.be"
 
 
+_TT_PATH = re.compile(r"^/(@[^/]*/(?:video|photo)/\d+|t/\w+|embed/(?:v2/)?\d+|share/video/\d+)")
+
+
+def normalize_url(url: str) -> str:
+    """Fix link forms the engine doesn't recognise (e.g. TikTok links without "www." or from m.tiktok.com)."""
+    url = url.strip()
+    try:
+        u = urlparse(url)
+    except Exception:
+        return url
+    h = (u.hostname or "").lower()
+    if h in ("tiktok.com", "m.tiktok.com", "web.tiktok.com") and _TT_PATH.match(u.path or ""):
+        path = u.path.replace("/photo/", "/video/") if "/photo/" in u.path else u.path
+        return f"https://www.tiktok.com{path}"
+    if h == "www.tiktok.com" and "/photo/" in (u.path or ""):
+        return f"https://www.tiktok.com{u.path.replace('/photo/', '/video/')}"
+    return url
+
+
 def extract_urls(text: str) -> list[str]:
     out = []
     for m in re.finditer(r"https?://\S+", text):
@@ -250,6 +269,12 @@ def friendly(d: str, url: str) -> EngineError:
         return EngineError(
             f"{name} blocked this request. Try again in a minute, switch network, or in Settings choose a "
             f"browser where you are logged in (or a cookies.txt file).", d, login_site=name)
+    if "ip address is blocked" in lo:
+        return EngineError(f"{host_of(url) or 'The site'} doesn't allow this post in your country or network. "
+                           "Try another network (or a VPN).", d)
+    if "unsupported url" in lo and "tiktok.com" in host_of(url):
+        return EngineError("This is a TikTok page, not one video. Open the video itself (tap it, or Share ▸ Copy link) "
+                           "and use that link.", d)
     if "unsupported url" in lo:
         return EngineError("No downloadable video found at this link.", d)
     if "private video" in lo:
@@ -361,6 +386,7 @@ class Engine:
         return tail[-1] if tail else ("Updated" if code == 0 else "Update failed")
 
     def info(self, url: str) -> MediaInfo:
+        url = normalize_url(url)
         if is_drm(url):
             raise EngineError("This service locks its videos with DRM (like Netflix and Prime Video), so no downloader "
                               "can save them. Use the download option in their own app instead.", "DRM", drm=True)
@@ -422,6 +448,7 @@ class Engine:
 
     def download(self, key: str, url: str, q: Quality, folder: str, playlist: bool, name: str | None, on_progress) -> list[str]:
         """Blocking. on_progress(dict) gets: pct, speed, eta, total, stage. Returns final file paths."""
+        url = normalize_url(url)
         self._cancelled.discard(key)
         if name and not playlist:
             tmpl = f"{name}.%(ext)s"
@@ -447,8 +474,11 @@ class Engine:
             elif line.startswith(("[Merger]", "[ExtractAudio]", "[Fixup", "[VideoConvertor]", "[Metadata]")):
                 on_progress(dict(stage="processing"))
 
+        subs = (["--write-subs", "--write-auto-subs", "--sub-langs", "en.*,bn.*,-live_chat", "--embed-subs"]
+                if self.settings.get("subtitles") and not q.is_audio else [])
+
         def build(ex, ck):
-            return (self._base(url, ex, ck) + q.args() + [
+            return (self._base(url, ex, ck) + q.args() + subs + [
                 "-o", os.path.join(folder, tmpl),
                 "--yes-playlist" if playlist else "--no-playlist",
                 "--windows-filenames", "--no-mtime", "--no-overwrites",

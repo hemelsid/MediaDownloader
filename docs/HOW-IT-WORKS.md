@@ -113,3 +113,18 @@ explanation instead of trying.
 - Not yet tested on many phones; YouTube behaviour depends on network.
 - No WhatsApp status saver yet.
 - Pieces of DASH-only streams without a page link (rare) download as video-only.
+
+
+## TikTok
+- PC: yt-dlp.exe imitates Chrome (curl_cffi "impersonation"), which TikTok now requires. Links are
+  normalised first (`tiktok.com/…`, `m.tiktok.com/…`, `/photo/` → `https://www.tiktok.com/@user/video/<id>`).
+- Browser button: on the For You feed the page link is useless, so `content.js` takes the id from the
+  player box (`id="xgwrapper-0-<videoId>"`) and the author from the nearest `/@user` link.
+- Phone: youtubedl-android has no curl_cffi, so yt-dlp is refused ("Unexpected response from webpage request").
+  `TikTok.kt` opens the post in a hidden WebView with a desktop Chrome user-agent and reads
+  `__UNIVERSAL_DATA_FOR_REHYDRATION__ → __DEFAULT_SCOPE__["webapp.video-detail"].itemInfo.itemStruct`
+  (`video.bitrateInfo[].PlayAddr` = every quality without watermark, `imagePost.images` = photos).
+  The CDN wants the page's cookies (`tt_chain_token`) + `Referer: https://www.tiktok.com/`; the WebView
+  stores them in the shared CookieManager and `Cookies.fileForRun` copies them to the CDN's domain.
+  Videos/audio then go through yt-dlp as a direct file (progress, MP3 conversion); photos are fetched directly.
+- Verified on GitHub's network with the "Test links" workflow (`.github/tiktok_probe.py`).

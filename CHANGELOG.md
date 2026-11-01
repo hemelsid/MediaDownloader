@@ -4,6 +4,20 @@ Every push to `main` builds a new Release (`v1.<build number>`); all Releases ar
 Earlier test builds v1–v6 were made before this repo existed; they are in Releases as v0.1–v0.6
 (signed with different keys, so uninstall before installing one of them).
 
+## NEXT — 2026-11-02
+- **TikTok fixed (phone):** TikTok now only answers real browsers, so the phone's engine was refused.
+  The app now reads TikTok videos through a hidden built-in browser: every quality (no watermark),
+  MP3/M4A, and photo posts ("All photos"). Works with shared links (vt.tiktok.com, vm.tiktok.com),
+  links without "www", and the For You feed in the app's Browser.
+- **TikTok fixed (PC):** links like tiktok.com/… or m.tiktok.com/… are now accepted, and the browser button
+  on the TikTok feed sends the video you're watching (it used to send "/foryou"). Clearer messages
+  when TikTok blocks a post in your country. Browser extension 1.2.1 (press reload once).
+- **New (phone):** Settings ▸ Downloads — Wi-Fi only, downloads at the same time (1/2/3/5), save subtitles.
+- **New (phone):** music keeps playing in the background with lock-screen / notification controls;
+  videos go into a floating picture-in-picture window when you press Home.
+- **New (PC):** Settings ▸ "Save subtitles inside videos".
+- New "Test links" workflow (GitHub Actions) to check any site on a real network.
+
 ## v1.8 — 2026-11-01
 - **Fixed: having to open the app before using the browser button.** The app now starts with Windows
   and waits quietly in the system tray (like IDM). Closing the window keeps it in the tray; use the
