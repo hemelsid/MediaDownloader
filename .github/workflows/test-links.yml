@@ -1,0 +1,42 @@
+name: Test links
+# Manual check: does the download engine get the video info for these links?
+# Runs the same engines the apps use: Windows yt-dlp.exe (PC) and plain Python yt-dlp (like the phone).
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "Links separated by spaces"
+        required: true
+        default: "https://www.tiktok.com/@scout2015/video/6718335390845095173"
+
+jobs:
+  pc:
+    runs-on: windows-latest
+    steps:
+      - name: yt-dlp.exe (same as the PC app)
+        shell: bash
+        run: |
+          curl -sSL -o yt-dlp.exe https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe
+          ./yt-dlp.exe --version
+          for u in ${{ github.event.inputs.urls }}; do
+            echo "::group::$u"
+            ./yt-dlp.exe -v --skip-download --print "OK %(extractor)s | %(title).60s | %(format_id)s" "$u" 2>&1 | grep -v "^\[debug\] \(Loaded\|Plugin\|Lazy\)" | tail -25 || true
+            echo "::endgroup::"
+          done
+  phone-like:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        extra: ["plain", "curl-cffi"]
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: yt-dlp (${{ matrix.extra }})
+        run: |
+          if [ "${{ matrix.extra }}" = "plain" ]; then pip -q install yt-dlp; else pip -q install "yt-dlp[default,curl-cffi]"; fi
+          yt-dlp --version
+          for u in ${{ github.event.inputs.urls }}; do
+            echo "::group::$u"
+            yt-dlp -v --skip-download --print "OK %(extractor)s | %(title).60s | %(format_id)s" "$u" 2>&1 | grep -v "^\[debug\] \(Loaded\|Plugin\|Lazy\)" | tail -25 || true
+            echo "::endgroup::"
+          done

@@ -4,7 +4,7 @@ name: Build APK
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**', '.github/workflows/legacy-apk.yml']
+    paths-ignore: ['**.md', 'docs/**', '.github/workflows/legacy-apk.yml', '.github/workflows/test-links.yml']
   workflow_dispatch:
 
 permissions:
